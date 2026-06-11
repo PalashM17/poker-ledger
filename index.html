@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Poker Ledger</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Centered container: max 480px, looks good on mobile and desktop -->
+  <div class="mx-auto max-w-[480px] min-h-screen flex flex-col">
+
+    <!-- ── Main content area ── -->
+    <main class="flex-1 pb-20 px-4 pt-6">
+
+      <!-- LEDGER SCREEN -->
+      <section id="screen-ledger" class="hidden">
+        <h1 class="text-2xl font-bold mb-4">Ledger</h1>
+        <p class="text-gray-400">Player balances will appear here.</p>
+      </section>
+
+      <!-- LIVE SCREEN -->
+      <section id="screen-live" class="hidden">
+        <h1 class="text-2xl font-bold mb-4">Live</h1>
+        <p class="text-gray-400">Active session details will appear here.</p>
+      </section>
+
+      <!-- HISTORY SCREEN -->
+      <section id="screen-history" class="hidden">
+        <h1 class="text-2xl font-bold mb-4">History</h1>
+        <p class="text-gray-400">Past sessions will appear here.</p>
+      </section>
+
+      <!-- LEADERBOARDS SCREEN -->
+      <section id="screen-leaderboards" class="hidden">
+        <h1 class="text-2xl font-bold mb-4">Leaderboards</h1>
+        <p class="text-gray-400">Stats and rankings will appear here.</p>
+      </section>
+
+      <!-- ADMIN SCREEN -->
+      <section id="screen-admin" class="hidden">
+        <h1 class="text-2xl font-bold mb-4">Admin</h1>
+
+        <!-- Shown when not logged in -->
+        <div id="admin-login-area" class="bg-gray-800 rounded-2xl p-6">
+          <p class="text-lg font-semibold mb-1">Admin Login</p>
+          <p class="text-gray-400 text-sm mb-4">Sign in to unlock write controls.</p>
+          <input id="admin-email" type="email" placeholder="Email"
+            class="w-full rounded-xl bg-gray-700 px-4 py-3 mb-3 text-base outline-none focus:ring-2 focus:ring-indigo-500" />
+          <input id="admin-password" type="password" placeholder="Password"
+            class="w-full rounded-xl bg-gray-700 px-4 py-3 mb-4 text-base outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="btn-login"
+            class="w-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl py-3 text-base font-semibold transition-colors">
+            Sign In
+          </button>
+          <p id="login-error" class="text-red-400 text-sm mt-3 hidden"></p>
+        </div>
+
+        <!-- Shown once logged in (placeholder) -->
+        <div id="admin-controls" class="hidden">
+          <p class="text-gray-400 text-sm mb-4">Admin controls appear here once logged in.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ── Bottom nav ── -->
+    <nav class="fixed bottom-0 inset-x-0 bg-gray-900 border-t border-gray-800 flex justify-around max-w-[480px] mx-auto">
+      <button data-screen="ledger"       class="nav-btn flex-1 py-3 text-xs font-medium flex flex-col items-center gap-1">
+        <span class="text-lg">💰</span>Ledger
+      </button>
+      <button data-screen="live"         class="nav-btn flex-1 py-3 text-xs font-medium flex flex-col items-center gap-1">
+        <span class="text-lg">🃏</span>Live
+      </button>
+      <button data-screen="history"      class="nav-btn flex-1 py-3 text-xs font-medium flex flex-col items-center gap-1">
+        <span class="text-lg">📜</span>History
+      </button>
+      <button data-screen="leaderboards" class="nav-btn flex-1 py-3 text-xs font-medium flex flex-col items-center gap-1">
+        <span class="text-lg">🏆</span>Ranks
+      </button>
+      <button data-screen="admin"        class="nav-btn flex-1 py-3 text-xs font-medium flex flex-col items-center gap-1">
+        <span class="text-lg">⚙️</span>Admin
+      </button>
+    </nav>
+
+  </div><!-- /container -->
+
+  <script>
+    // === CONFIG ===
+    // Fill these in after creating your Supabase project.
+    // The anon key is safe to be public — it grants read-only access
+    // and Supabase Row Level Security enforces all write restrictions.
+    const SUPABASE_URL     = "PASTE_HERE";
+    const SUPABASE_ANON_KEY = "PASTE_HERE";
+
+    // Initialize Supabase client (no calls made until later chunks)
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // === STATE ===
+    const state = {
+      currentScreen: "ledger",
+      admin: null,           // will hold Supabase user object when signed in
+      players: [],
+      sessions: [],
+      activeSessions: [],
+      ledgerBalances: {},
+      pollTimer: null,
+    };
+
+    // === ACCOUNTING ENGINE (chunk 2) ===
+    // Pure functions — no I/O. Filled in chunk 2.
+    //
+    // computeSessionNet(events, playerId) → integer rupees
+    // computeExpenseShares(events, players) → { playerId: shareAmount }
+    // waterFill(balances, payerId, amount) → [{ to, amount }]
+    // roundToTen(n) → integer (nearest ₹10, remainder to largest)
+
+    // === DATA LAYER (chunk 3) ===
+    // Supabase read/write helpers. Filled in chunk 3.
+    //
+    // fetchPlayers(), fetchSessions(), fetchEvents(sessionId)
+    // fetchLedgerBalances(), fetchSessionResults(sessionId)
+    // insertEvent(event), softDeleteEvent(id)
+    // closeSession(sessionId), finalizeSession(sessionId)
+    // postLedgerUpdate(sessionId), postSettlement(payerId, amount)
+
+    // === ADMIN UI (chunk 4) ===
+    // Event wiring for admin controls. Filled in chunk 4.
+
+    // === VIEWER UI (chunk 5) ===
+    // Render functions for all read-only screens. Filled in chunk 5.
+    //
+    // renderLedger(), renderLive(), renderHistory(), renderLeaderboards()
+
+    // === NAV / INIT ===
+
+    const SCREENS = ["ledger", "live", "history", "leaderboards", "admin"];
+
+    function showScreen(name) {
+      SCREENS.forEach(s => {
+        document.getElementById("screen-" + s).classList.add("hidden");
+      });
+      document.getElementById("screen-" + name).classList.remove("hidden");
+
+      document.querySelectorAll(".nav-btn").forEach(btn => {
+        const active = btn.dataset.screen === name;
+        btn.classList.toggle("text-indigo-400", active);
+        btn.classList.toggle("text-gray-500", !active);
+      });
+
+      state.currentScreen = name;
+    }
+
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => showScreen(btn.dataset.screen));
+    });
+
+    // Boot
+    showScreen("ledger");
+  </script>
+</body>
+</html>

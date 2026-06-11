@@ -1,0 +1,46 @@
+Work only in C:\Users\Asus\Desktop\Poker App
+
+You are building a single-file, mobile-first web app. Read this fully, then execute end-to-end (create the files yourself, run git). Build ONLY the skeleton in this chunk — no accounting logic, no auth logic, no data fetching yet. Just structure.
+
+ENVIRONMENT: Windows. Working directory is "C:\Users\Asus\Desktop\Poker App" (quote paths — there's a space). Do all work directly in this folder; do not create a subfolder.
+
+PROJECT: A mobile-first poker ledger web app for a private friend group. It is ONE static file, index.html, with TailwindCSS and the Supabase JS client both loaded from CDNs — no build step, no framework, no bundler. The single admin logs in (via Supabase Auth) to write data; everyone else opens a public link and views read-only. "Live" updates are done by polling (re-reading data every ~4 seconds), not realtime subscriptions. Data lives in Supabase (free). The repo will be hosted on GitHub Pages (public repo), so put NO secrets in the file — only the public Supabase anon key.
+
+CREATE THESE FILES:
+
+1. index.html — the whole app shell, mobile-first:
+   - Load Tailwind via the Play CDN and @supabase/supabase-js v2 via CDN (jsdelivr or unpkg).
+   - Proper viewport meta; a centered max-width container (~480px) so it looks fine on desktop too; large tap targets and comfortable font sizes by default.
+   - A clearly-commented CONFIG block near the top: const SUPABASE_URL = "PASTE_HERE"; const SUPABASE_ANON_KEY = "PASTE_HERE"; with a comment explaining these are filled in after creating the Supabase project, and that the anon key is safe to be public.
+   - A simple top or bottom nav that switches between these EMPTY screens (just headings/placeholders for now), implemented as plain JS view-switching (show/hide sections, no router): Ledger, Live, History, Leaderboards, and an Admin section.
+   - The Admin section should show a placeholder "Admin login" area (no real auth yet) and a note that admin controls appear here once logged in.
+   - All logic in a single <script> at the bottom. Keep functions small and clearly named, ready to be filled in by later chunks. Add clear section comments: // === CONFIG ===, // === STATE ===, // === ACCOUNTING ENGINE (chunk 2) ===, // === DATA LAYER (chunk 3) ===, // === ADMIN UI (chunk 4) ===, // === VIEWER UI (chunk 5) ===, // === NAV / INIT ===.
+   - Do NOT call Supabase yet; just initialize the client from the CONFIG constants so it's ready.
+
+2. schema.sql — full Postgres schema to paste into the Supabase SQL editor:
+   - Tables: players (id uuid pk default gen_random_uuid, name text not null, created_at timestamptz default now());
+     sessions (id, name text, status text check in ('active','closed','finalized') default 'active', created_at, closed_at, finalized_at);
+     session_events (id, session_id fk, type text check in ('buyin','rebuy','cashout','transfer','expense'), player_id fk, counterparty_id fk nullable [for transfer recipient], amount integer not null [whole rupees], note text nullable, created_at, deleted_at timestamptz nullable [soft-delete for undo]);
+     settlements (id, payer_id fk, amount integer, distribution jsonb [record of who received what], created_at);
+     ledger_balances (player_id uuid pk fk, balance integer not null default 0, updated_at);
+     session_results (id, session_id fk, player_id fk, net integer, created_at).
+   - Enable Row Level Security on every table.
+   - Policies: allow SELECT to everyone (anon + authenticated); allow INSERT/UPDATE/DELETE only to the authenticated role. Write these as explicit CREATE POLICY statements.
+   - Add a comment at the bottom explaining: after running this, go to Authentication and create ONE admin user (email + password) — that account's login is what unlocks writing.
+
+3. SETUP.md — concise setup steps: (a) create a free Supabase project, open SQL editor, paste & run schema.sql; (b) create one admin user under Authentication; (c) copy Project URL + anon key into index.html CONFIG; (d) create an empty public GitHub repo and the commands to push; (e) enable GitHub Pages (Settings > Pages > deploy from main branch root). Keep it short and accurate.
+
+4. CLAUDE.md — context for future Claude Code sessions / new laptop. Include the product summary, the single-file + Supabase + polling + GitHub Pages architecture, the screen list, and these LOCKED accounting decisions verbatim:
+   - Settlement = WATER-FILLING (level top positive balances down to equal footing until the payment is consumed), NOT proportional. Settlements are standalone ledger transactions applied immediately — NOT session events, NOT gated by "Update Ledger". Overpay beyond flattening all winners to zero → hold remainder as the payer's positive credit (rare; keep simple).
+   - Transfer: payer's session result +amount (like a cashout), receiver -amount (like a buy-in); net-zero.
+   - Expense has a payer who is reimbursed in full; positive-net players are debited proportional shares; net-zero; computed at session finalize. If NO profitable players, require admin manual override defaulting to equal split among all players.
+   - Ledger posting on "Update Ledger": each player's session net = (cashouts + chips transferred out + expense reimbursement) - (buy-ins + rebuys + chips transferred in + expense share); added to global balance.
+   - Money is integer rupees, minimum unit ₹10. Store integers. Distribution math rounds each output to nearest ₹10, remainder assigned to the largest balance, so totals stay exact. Display always ₹10-clean.
+   - Global ledger changes ONLY on settlements and on "Update Ledger" after a session is closed. Closed sessions are immutable forever (enforced in app logic). Multiple sessions can run at once. Warn at session close if chips-in != chips-out.
+   - The accounting functions must be pure (no I/O), grouped in the ACCOUNTING ENGINE section.
+
+5. .gitignore — ignore OS junk and any local notes; nothing else is needed for a static site.
+
+THEN: run git init, make an initial commit, and report back: the full file list, the contents of index.html and schema.sql, and confirm the page opens (you can describe the structure — no build to run).
+
+Constraints: no Supabase calls, no auth, no accounting, no event entry yet. Skeleton only. Keep it clean and minimal.
