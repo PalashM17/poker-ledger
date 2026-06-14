@@ -58,9 +58,200 @@
           <p id="login-error" class="text-red-400 text-sm mt-3 hidden"></p>
         </div>
 
-        <!-- Shown once logged in (placeholder) -->
+        <!-- Shown once logged in -->
         <div id="admin-controls" class="hidden">
-          <p class="text-gray-400 text-sm mb-4">Admin controls appear here once logged in.</p>
+          <button id="btn-logout"
+            class="w-full bg-gray-700 hover:bg-gray-600 active:bg-gray-800 rounded-xl py-3 text-base font-semibold transition-colors mb-6">
+            Sign Out
+          </button>
+
+          <!-- ── A1: Session list ── -->
+          <div id="admin-session-list">
+            <h2 class="text-lg font-semibold mb-3">Sessions</h2>
+            <div id="session-list-items" class="space-y-2 mb-4"></div>
+            <div class="bg-gray-800 rounded-2xl p-4">
+              <p class="text-sm font-medium mb-2 text-gray-300">New Session</p>
+              <input id="new-session-name" type="text" placeholder="Session name"
+                class="w-full rounded-xl bg-gray-700 px-4 py-3 mb-3 text-base outline-none focus:ring-2 focus:ring-indigo-500" />
+              <button id="btn-create-session"
+                class="w-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl py-3 text-base font-semibold transition-colors">
+                Create Session
+              </button>
+            </div>
+          </div>
+
+          <!-- ── Session entry view ── -->
+          <div id="admin-session-view" class="hidden">
+            <div class="flex items-center gap-3 mb-4">
+              <button id="btn-back-sessions" class="text-indigo-400 text-sm font-medium hover:text-indigo-300 shrink-0">← Back</button>
+              <div class="flex-1 min-w-0">
+                <h2 id="session-view-title" class="text-lg font-semibold truncate"></h2>
+                <span id="session-status-badge" class="text-xs px-2 py-0.5 rounded-full font-medium"></span>
+              </div>
+            </div>
+
+            <!-- A3: Event entry form (active sessions only) -->
+            <div id="session-entry-form">
+              <!-- Type selector -->
+              <div class="flex gap-1 mb-3 flex-wrap">
+                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="buyin">Buy-in</button>
+                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="rebuy">Rebuy</button>
+                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="cashout">Cashout</button>
+                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="transfer">Transfer</button>
+                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="expense">Expense</button>
+              </div>
+              <!-- Player / counterparty -->
+              <div class="space-y-2 mb-3">
+                <div>
+                  <label id="event-player-label" class="text-xs text-gray-400 mb-1 block">Player</label>
+                  <select id="event-player"
+                    class="w-full rounded-xl bg-gray-700 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-indigo-500">
+                  </select>
+                </div>
+                <div id="event-counterparty-row" class="hidden">
+                  <label class="text-xs text-gray-400 mb-1 block">Transfer To (receiver)</label>
+                  <select id="event-counterparty"
+                    class="w-full rounded-xl bg-gray-700 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-indigo-500">
+                  </select>
+                </div>
+              </div>
+              <!-- Amount + quick-add -->
+              <div class="mb-3">
+                <label class="text-xs text-gray-400 mb-1 block">Amount (₹)</label>
+                <input id="event-amount" type="number" inputmode="numeric" placeholder="0"
+                  class="w-full rounded-xl bg-gray-700 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-indigo-500 mb-2" />
+                <div class="flex gap-2">
+                  <button class="amt-quick flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2 text-sm font-medium" data-add="100">+100</button>
+                  <button class="amt-quick flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2 text-sm font-medium" data-add="500">+500</button>
+                  <button class="amt-quick flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2 text-sm font-medium" data-add="1000">+1k</button>
+                  <button class="amt-quick flex-1 bg-gray-600 hover:bg-gray-500 rounded-xl py-2 text-sm font-medium" id="btn-amt-clear" data-add="clear">✕</button>
+                </div>
+              </div>
+              <!-- Note -->
+              <input id="event-note" type="text" placeholder="Note (optional)"
+                class="w-full rounded-xl bg-gray-700 px-4 py-3 mb-2 text-base outline-none focus:ring-2 focus:ring-indigo-500" />
+              <!-- A2: Roster picker -->
+              <div class="bg-gray-800 rounded-xl p-3 mb-3">
+                <p class="text-xs text-gray-400 mb-2">Add player to session roster</p>
+                <div class="flex gap-2 mb-2">
+                  <select id="roster-player-pick"
+                    class="flex-1 rounded-xl bg-gray-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Pick player…</option>
+                  </select>
+                  <button id="btn-roster-add"
+                    class="bg-gray-600 hover:bg-gray-500 rounded-xl px-4 py-2 text-sm font-medium shrink-0">Add</button>
+                </div>
+                <div class="flex gap-2">
+                  <input id="quick-add-player-name" type="text" placeholder="New player name"
+                    class="flex-1 rounded-xl bg-gray-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <button id="btn-quick-add-player"
+                    class="bg-green-700 hover:bg-green-600 rounded-xl px-4 py-2 text-sm font-medium shrink-0">Create</button>
+                </div>
+              </div>
+              <p id="event-error" class="text-red-400 text-sm mb-2 hidden"></p>
+              <button id="btn-submit-event"
+                class="w-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl py-3 text-base font-semibold transition-colors mb-4">
+                Add Event
+              </button>
+            </div>
+
+            <!-- Immutable notice (closed / finalized) -->
+            <div id="session-immutable-notice" class="hidden bg-gray-800 rounded-xl p-3 mb-4 text-sm text-yellow-400">
+              This session is <span id="immutable-status-word">closed</span> — no changes allowed.
+            </div>
+
+            <!-- B1/B2: Session actions -->
+            <div id="session-actions-b" class="mb-4">
+              <button id="btn-close-session"
+                class="hidden w-full bg-orange-700 hover:bg-orange-600 active:bg-orange-800 rounded-xl py-3 text-base font-semibold transition-colors">
+                Close Session
+              </button>
+              <div id="close-confirm-dialog" class="hidden bg-gray-800 rounded-xl p-4 mt-2">
+                <p id="close-warning-text" class="text-sm text-yellow-400 mb-3"></p>
+                <div class="flex gap-2">
+                  <button id="btn-close-yes" class="flex-1 bg-orange-700 hover:bg-orange-600 rounded-xl py-2.5 text-sm font-semibold">Close Anyway</button>
+                  <button id="btn-close-no"  class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2.5 text-sm font-semibold">Cancel</button>
+                </div>
+              </div>
+              <!-- Update Ledger (closed only) -->
+              <div id="update-ledger-area" class="hidden mt-3">
+                <button id="btn-show-update-ledger"
+                  class="w-full bg-green-700 hover:bg-green-600 active:bg-green-800 rounded-xl py-3 text-base font-semibold transition-colors">
+                  Update Ledger
+                </button>
+                <div id="update-ledger-preview" class="hidden bg-gray-800 rounded-xl p-4 mt-2">
+                  <p class="text-sm font-medium mb-2 text-gray-300">Session nets for review:</p>
+                  <div id="ledger-nets-table" class="text-sm space-y-1 mb-3"></div>
+                  <!-- Expense no-profit override -->
+                  <div id="expense-override-area" class="hidden mb-3 bg-gray-700 rounded-xl p-3">
+                    <p class="text-xs text-yellow-400 mb-2 font-medium">⚠ No profitable players — manual expense split required. Default is equal split.</p>
+                    <div id="expense-override-inputs" class="space-y-2 mb-2"></div>
+                    <button id="btn-recalculate-ledger"
+                      class="bg-gray-600 hover:bg-gray-500 rounded-xl px-4 py-2 text-sm font-medium">
+                      Recalculate
+                    </button>
+                  </div>
+                  <p id="ledger-preview-error" class="text-red-400 text-sm mb-2 hidden"></p>
+                  <div class="flex gap-2">
+                    <button id="btn-ledger-confirm-yes" class="flex-1 bg-green-700 hover:bg-green-600 rounded-xl py-2.5 text-sm font-semibold">Confirm Post</button>
+                    <button id="btn-ledger-cancel"      class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2.5 text-sm font-semibold">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- A4: Event log -->
+            <div class="mb-4">
+              <p class="text-sm font-medium text-gray-400 mb-2">Event Log</p>
+              <div id="session-log" class="space-y-2"></div>
+            </div>
+
+            <!-- A5: Live totals -->
+            <div id="session-totals" class="bg-gray-800 rounded-xl p-4 text-sm mb-4"></div>
+          </div>
+
+          <!-- ── B3: Standalone settlement (session-independent) ── -->
+          <div id="admin-settlement" class="mt-2">
+            <h2 class="text-lg font-semibold mb-3">Record Settlement</h2>
+            <div class="bg-gray-800 rounded-2xl p-4">
+              <div class="mb-3">
+                <label class="text-xs text-gray-400 mb-1 block">Payer</label>
+                <select id="settlement-payer"
+                  class="w-full rounded-xl bg-gray-700 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">Select payer…</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="text-xs text-gray-400 mb-1 block">Amount (₹)</label>
+                <input id="settlement-amount" type="number" inputmode="numeric" placeholder="0"
+                  class="w-full rounded-xl bg-gray-700 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <p id="settlement-error" class="text-red-400 text-sm mb-2 hidden"></p>
+              <button id="btn-settlement-preview"
+                class="w-full bg-indigo-600 hover:bg-indigo-500 rounded-xl py-3 text-base font-semibold transition-colors mb-2">
+                Preview Distribution
+              </button>
+              <div id="settlement-preview-area" class="hidden bg-gray-700 rounded-xl p-3">
+                <p class="text-sm font-medium mb-2 text-gray-300">Water-fill distribution:</p>
+                <div id="settlement-distribution-table" class="text-sm space-y-1 mb-3"></div>
+                <div class="flex gap-2">
+                  <button id="btn-settlement-confirm" class="flex-1 bg-green-700 hover:bg-green-600 rounded-xl py-2.5 text-sm font-semibold">Confirm</button>
+                  <button id="btn-settlement-cancel"  class="flex-1 bg-gray-600 hover:bg-gray-500 rounded-xl py-2.5 text-sm font-semibold">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TEMPORARY: engine self-test + sync indicator (remove in Chunk 6) -->
+        <div class="mt-6">
+          <button id="btn-run-tests"
+            class="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 rounded-xl py-3 text-base font-semibold transition-colors">
+            Run engine tests
+          </button>
+          <div id="test-results" class="mt-4 text-sm font-mono whitespace-pre-wrap bg-gray-800 rounded-xl p-4 hidden"></div>
+          <!-- TEMPORARY: polling status indicator (remove in Chunk 6) -->
+          <p id="sync-indicator" class="mt-3 text-xs text-gray-500 text-center"></p>
         </div>
       </section>
 
@@ -92,47 +283,1103 @@
     // Fill these in after creating your Supabase project.
     // The anon key is safe to be public — it grants read-only access
     // and Supabase Row Level Security enforces all write restrictions.
-    const SUPABASE_URL     = "PASTE_HERE";
-    const SUPABASE_ANON_KEY = "PASTE_HERE";
+    const SUPABASE_URL     = "https://nsoewxxgyraqaaoabxrw.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_4XEbJaKFN1vwZ-WoaPyBzA_kXm6GRFc";
 
     // Initialize Supabase client (no calls made until later chunks)
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { createClient } = window.supabase;
+    let db = null;
+    try { db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (e) { console.warn("Supabase init failed", e); }
 
     // === STATE ===
     const state = {
       currentScreen: "ledger",
-      admin: null,           // will hold Supabase user object when signed in
+      session: null,           // Supabase auth session object or null
+      isAdmin: false,          // derived: true when a valid session exists
+      admin: null,             // Supabase user object when signed in
       players: [],
       sessions: [],
       activeSessions: [],
       ledgerBalances: {},
       pollTimer: null,
+      // Chunk 4 additions
+      openSessionId: null,         // UUID of currently open session, or null
+      openSessionEvents: [],       // non-deleted events for open session
+      openSessionRoster: new Set(), // player_ids in this session (events ∪ in-memory picks)
+      editingEventId: null,        // UUID of event being inline-edited
+      editDraft: { amount: '', note: '' }, // live draft values while editing
+      selectedEventType: 'buyin',  // current type button selection
+      expenseOverrideDraft: {},    // { player_id: share } for no-profit expense override
     };
 
     // === ACCOUNTING ENGINE (chunk 2) ===
-    // Pure functions — no I/O. Filled in chunk 2.
-    //
-    // computeSessionNet(events, playerId) → integer rupees
-    // computeExpenseShares(events, players) → { playerId: shareAmount }
-    // waterFill(balances, payerId, amount) → [{ to, amount }]
-    // roundToTen(n) → integer (nearest ₹10, remainder to largest)
+
+    // Nearest multiple of 10, rounding half up (towards +∞ at .5).
+    function roundToTen(amount) {
+      return Math.floor(amount / 10 + 0.5) * 10;
+    }
+
+    // Indian number formatting: last 3 digits, then groups of 2 from right.
+    function formatINR(amount) {
+      const sign = amount < 0 ? '-' : '';
+      const abs  = Math.abs(amount);
+      const str  = String(abs);
+      let formatted;
+      if (str.length <= 3) {
+        formatted = str;
+      } else {
+        const last3 = str.slice(-3);
+        const rest  = str.slice(0, -3);
+        const groups = [];
+        let i = rest.length;
+        while (i > 0) {
+          groups.unshift(rest.slice(Math.max(0, i - 2), i));
+          i -= 2;
+        }
+        formatted = groups.join(',') + ',' + last3;
+      }
+      return sign + '₹' + formatted;
+    }
+
+    // Distribute `total` among recipients [{id, weight}] proportionally,
+    // each share rounded to nearest ₹10. The entire rounding remainder is
+    // added to the recipient with the largest weight (ties → first).
+    // Returns { id: share }. All shares sum exactly to total.
+    function splitProportional(total, recipients) {
+      const result = {};
+      if (!recipients || recipients.length === 0) return result;
+
+      const sumW = recipients.reduce((s, r) => s + r.weight, 0);
+      if (sumW === 0) {
+        recipients.forEach(r => { result[r.id] = 0; });
+        return result;
+      }
+
+      const rounded = recipients.map(r => ({
+        id: r.id,
+        weight: r.weight,
+        share: roundToTen(total * r.weight / sumW),
+      }));
+
+      const diff = total - rounded.reduce((s, r) => s + r.share, 0);
+
+      // Find index of largest weight (first on tie)
+      let largestIdx = 0;
+      for (let i = 1; i < rounded.length; i++) {
+        if (rounded[i].weight > rounded[largestIdx].weight) largestIdx = i;
+      }
+      rounded[largestIdx].share += diff;
+
+      rounded.forEach(r => { result[r.id] = r.share; });
+      return result;
+    }
+
+    // Compute per-player session results from raw event arrays.
+    // expenseOverride: optional { id: share } that overrides the auto expense split.
+    function computeSessionResults(players, events, expenseOverride) {
+      const active = events.filter(e => !e.deleted_at);
+
+      const gross        = {};
+      const reimbursement = {};
+      players.forEach(p => { gross[p.id] = 0; reimbursement[p.id] = 0; });
+
+      for (const e of active) {
+        if (e.type === 'buyin' || e.type === 'rebuy') {
+          gross[e.player_id] -= e.amount;
+        } else if (e.type === 'cashout') {
+          gross[e.player_id] += e.amount;
+        } else if (e.type === 'transfer') {
+          // FROM player_id (like cashout), TO counterparty_id (like buyin)
+          gross[e.player_id]        += e.amount;
+          gross[e.counterparty_id]  -= e.amount;
+        } else if (e.type === 'expense') {
+          // Fronter is reimbursed in full at net time
+          reimbursement[e.player_id] += e.amount;
+        }
+      }
+
+      const totalExpense = active
+        .filter(e => e.type === 'expense')
+        .reduce((s, e) => s + e.amount, 0);
+
+      let expenseShare     = {};
+      let needsExpenseOverride = false;
+      let suggestedEqualSplit  = {};
+      players.forEach(p => { expenseShare[p.id] = 0; });
+
+      if (totalExpense > 0) {
+        const winners = players.filter(p => gross[p.id] > 0);
+
+        if (winners.length > 0) {
+          // Proportional to gross profit among winners
+          const shares = splitProportional(
+            totalExpense,
+            winners.map(p => ({ id: p.id, weight: gross[p.id] }))
+          );
+          players.forEach(p => { expenseShare[p.id] = shares[p.id] || 0; });
+        } else {
+          // No profitable players → flag for override; working value = equal split
+          needsExpenseOverride = true;
+          suggestedEqualSplit  = splitProportional(
+            totalExpense,
+            players.map(p => ({ id: p.id, weight: 1 }))
+          );
+          players.forEach(p => { expenseShare[p.id] = suggestedEqualSplit[p.id] || 0; });
+        }
+
+        // Explicit override always takes precedence
+        if (expenseOverride) {
+          players.forEach(p => { expenseShare[p.id] = expenseOverride[p.id] || 0; });
+        }
+      }
+
+      const perPlayer = {};
+      players.forEach(p => {
+        const g = gross[p.id]         || 0;
+        const x = expenseShare[p.id]  || 0;
+        const r = reimbursement[p.id] || 0;
+        perPlayer[p.id] = { gross: g, expenseShare: x, reimbursement: r, net: g - x + r };
+      });
+
+      return { perPlayer, totalExpense, needsExpenseOverride, suggestedEqualSplit };
+    }
+
+    // Water-filling settlement: level down the highest positive balances first.
+    // Returns received map, balancesAfter, and leftover (overpay).
+    function distributeSettlement(balances, payerId, amount) {
+      const work     = { ...balances };
+      const received = {};
+      Object.keys(work).forEach(id => { received[id] = 0; });
+      if (!(payerId in work)) { work[payerId] = 0; received[payerId] = 0; }
+
+      let remaining = amount;
+
+      while (remaining > 0) {
+        const winners = Object.entries(work)
+          .filter(([id, bal]) => id !== payerId && bal > 0);
+        if (winners.length === 0) break;
+
+        const maxBal     = Math.max(...winners.map(([, b]) => b));
+        const top        = winners.filter(([, b]) => b === maxBal);
+        const otherBals  = winners.filter(([, b]) => b < maxBal).map(([, b]) => b);
+        const nextLevel  = otherBals.length > 0 ? Math.max(...otherBals) : 0;
+        const gap        = maxBal - nextLevel;
+        const totalCost  = gap * top.length;
+
+        if (totalCost <= remaining) {
+          // Reduce all top players by gap exactly
+          top.forEach(([id]) => { work[id] -= gap; received[id] += gap; });
+          remaining -= totalCost;
+        } else {
+          // Spread remaining equally (₹10-clean) among top players
+          const shares = splitProportional(remaining, top.map(([id]) => ({ id, weight: 1 })));
+          top.forEach(([id]) => {
+            const s = shares[id] || 0;
+            work[id]     -= s;
+            received[id] += s;
+          });
+          remaining = 0;
+        }
+      }
+
+      // Payer balance: old balance + full amount paid (overpay → payer becomes creditor)
+      const balancesAfter = { ...work };
+      balancesAfter[payerId] = (balances[payerId] || 0) + amount;
+
+      const receivedOut = {};
+      Object.entries(received).forEach(([id, amt]) => {
+        if (amt > 0) receivedOut[id] = amt;
+      });
+
+      return { received: receivedOut, balancesAfter, leftover: remaining };
+    }
+
+    // Chip balance sanity check (buyins+rebuys vs cashouts; transfers and expenses excluded).
+    function checkTableBalance(events) {
+      const active  = events.filter(e => !e.deleted_at);
+      const chipsIn = active
+        .filter(e => e.type === 'buyin' || e.type === 'rebuy')
+        .reduce((s, e) => s + e.amount, 0);
+      const chipsOut = active
+        .filter(e => e.type === 'cashout')
+        .reduce((s, e) => s + e.amount, 0);
+      return { chipsIn, chipsOut, balanced: chipsIn === chipsOut, difference: chipsIn - chipsOut };
+    }
+
+    // ── Self-test harness ──────────────────────────────────────────────────────
+    function runEngineTests() {
+      const tests = [];
+      function check(name, got, expected, eq) {
+        const pass = eq ? eq(got, expected) : JSON.stringify(got) === JSON.stringify(expected);
+        const label = pass ? 'PASS' : 'FAIL';
+        console.log(`[${label}] ${name}`);
+        if (!pass) console.log('  expected:', expected, '\n  got:     ', got);
+        tests.push({ name, pass });
+      }
+
+      // a) Water-fill settlement: basic case
+      {
+        const r = distributeSettlement({ C: 4000, B: 3000 }, 'A', 5000);
+        check('a) received.C', r.received.C, 3000);
+        check('a) received.B', r.received.B, 2000);
+        check('a) balancesAfter.C', r.balancesAfter.C, 1000);
+        check('a) balancesAfter.B', r.balancesAfter.B, 1000);
+      }
+
+      // b) Expense split: proportional to gross among winners, zero-sum net
+      {
+        const players = [
+          { id: 'Rahul' }, { id: 'Aman' }, { id: 'P3' },
+        ];
+        const events = [
+          { type: 'buyin',   player_id: 'Rahul', amount: 4000 },
+          { type: 'cashout', player_id: 'Rahul', amount: 10000 },
+          { type: 'buyin',   player_id: 'Aman',  amount: 3000 },
+          { type: 'cashout', player_id: 'Aman',  amount: 7000 },
+          { type: 'buyin',   player_id: 'P3',    amount: 13000 },
+          { type: 'cashout', player_id: 'P3',    amount: 3000 },
+          { type: 'expense', player_id: 'Rahul', amount: 2000 },
+        ];
+        const { perPlayer } = computeSessionResults(players, events);
+        check('b) expenseShare Rahul', perPlayer.Rahul.expenseShare, 1200);
+        check('b) expenseShare Aman',  perPlayer.Aman.expenseShare,  800);
+        check('b) reimbursement Rahul', perPlayer.Rahul.reimbursement, 2000);
+        check('b) net Rahul', perPlayer.Rahul.net, 6800);
+        check('b) net Aman',  perPlayer.Aman.net,  3200);
+        const sumNet = Object.values(perPlayer).reduce((s, p) => s + p.net, 0);
+        check('b) sum of nets = 0', sumNet, 0);
+      }
+
+      // c) Transfer is net-zero
+      {
+        const players = [{ id: 'Rahul' }, { id: 'Aman' }];
+        const events = [
+          { type: 'buyin',    player_id: 'Rahul', amount: 2000 },
+          { type: 'transfer', player_id: 'Rahul', counterparty_id: 'Aman', amount: 2000 },
+          { type: 'cashout',  player_id: 'Aman',  amount: 2000 },
+        ];
+        const { perPlayer } = computeSessionResults(players, events);
+        check('c) gross Rahul', perPlayer.Rahul.gross, 0);
+        check('c) gross Aman',  perPlayer.Aman.gross,  0);
+        const sumNet = Object.values(perPlayer).reduce((s, p) => s + p.net, 0);
+        check('c) sum of nets = 0', sumNet, 0);
+      }
+
+      // d) roundToTen
+      check('d) 1234→1230',    roundToTen(1234),  1230);
+      check('d) 1235→1240',    roundToTen(1235),  1240);
+      check('d) -1235→-1230',  roundToTen(-1235), -1230);
+      check('d) 5→10',         roundToTen(5),     10);
+      check('d) 4→0',          roundToTen(4),     0);
+
+      // e) Overpay: leftover = 3000
+      {
+        const r = distributeSettlement({ C: 1000, B: 1000 }, 'A', 5000);
+        check('e) leftover', r.leftover, 3000);
+        check('e) balancesAfter.C', r.balancesAfter.C, 0);
+        check('e) balancesAfter.B', r.balancesAfter.B, 0);
+      }
+
+      // f) No-winners expense → needsExpenseOverride, suggestedEqualSplit sums to 1500
+      {
+        const players = [{ id: 'P1' }, { id: 'P2' }, { id: 'P3' }];
+        const events  = [{ type: 'expense', player_id: 'P1', amount: 1500 }];
+        const { needsExpenseOverride, suggestedEqualSplit } = computeSessionResults(players, events);
+        check('f) needsExpenseOverride', needsExpenseOverride, true);
+        const splitSum = Object.values(suggestedEqualSplit).reduce((s, v) => s + v, 0);
+        check('f) suggestedEqualSplit sums to 1500', splitSum, 1500);
+      }
+
+      // g) checkTableBalance: buyin 5000, cashout 4990 → not balanced, diff 10
+      {
+        const events = [
+          { type: 'buyin',   player_id: 'X', amount: 5000 },
+          { type: 'cashout', player_id: 'Y', amount: 4990 },
+        ];
+        const r = checkTableBalance(events);
+        check('g) balanced', r.balanced, false);
+        check('g) difference', r.difference, 10);
+      }
+
+      const passed = tests.filter(t => t.pass).length;
+      const failed = tests.filter(t => !t.pass).length;
+      console.log(`\nResults: ${passed} passed, ${failed} failed`);
+      return { passed, failed, total: tests.length, tests };
+    }
 
     // === DATA LAYER (chunk 3) ===
-    // Supabase read/write helpers. Filled in chunk 3.
-    //
-    // fetchPlayers(), fetchSessions(), fetchEvents(sessionId)
-    // fetchLedgerBalances(), fetchSessionResults(sessionId)
-    // insertEvent(event), softDeleteEvent(id)
-    // closeSession(sessionId), finalizeSession(sessionId)
-    // postLedgerUpdate(sessionId), postSettlement(payerId, amount)
+
+    // Internal wrapper: guards db-null, runs fn(db), throws on Supabase error.
+    // All helpers route through this so error handling is consistent.
+    async function dbQuery(label, fn) {
+      if (!db) {
+        console.warn(`[DATA] db is null — skipping ${label}`);
+        throw new Error("db not initialized");
+      }
+      const { data, error } = await fn(db);
+      if (error) {
+        console.warn(`[DATA] ${label} failed:`, error.message);
+        throw error;
+      }
+      return data;
+    }
+
+    // ── Read helpers (anon-safe; RLS allows SELECT for everyone) ──────────────
+
+    async function getPlayers() {
+      return dbQuery("getPlayers", db =>
+        db.from("players").select("*").order("name")
+      );
+    }
+
+    async function getSessions() {
+      return dbQuery("getSessions", db =>
+        db.from("sessions").select("*").order("created_at", { ascending: false })
+      );
+    }
+
+    async function getActiveSessions() {
+      return dbQuery("getActiveSessions", db =>
+        db.from("sessions").select("*").eq("status", "active").order("created_at", { ascending: false })
+      );
+    }
+
+    async function getSessionEvents(sessionId) {
+      return dbQuery("getSessionEvents", db =>
+        db.from("session_events").select("*")
+          .eq("session_id", sessionId)
+          .is("deleted_at", null)
+          .order("created_at")
+      );
+    }
+
+    async function getSettlements() {
+      return dbQuery("getSettlements", db =>
+        db.from("settlements").select("*").order("created_at", { ascending: false })
+      );
+    }
+
+    async function getLedgerBalances() {
+      return dbQuery("getLedgerBalances", db =>
+        db.from("ledger_balances").select("*")
+      );
+    }
+
+    async function getSessionResults(sessionId) {
+      return dbQuery("getSessionResults", db =>
+        db.from("session_results").select("*").eq("session_id", sessionId)
+      );
+    }
+
+    // ── Write helpers (authenticated only; RLS blocks anon writes) ────────────
+
+    async function createPlayer(name) {
+      return dbQuery("createPlayer", db =>
+        db.from("players").insert({ name }).select().single()
+      );
+    }
+
+    async function createSession(name) {
+      return dbQuery("createSession", db =>
+        db.from("sessions").insert({ name, status: "active" }).select().single()
+      );
+    }
+
+    async function updateSession(id, patch) {
+      return dbQuery("updateSession", db =>
+        db.from("sessions").update(patch).eq("id", id).select().single()
+      );
+    }
+
+    async function createSessionEvent(evt) {
+      return dbQuery("createSessionEvent", db =>
+        db.from("session_events").insert(evt).select().single()
+      );
+    }
+
+    async function softDeleteSessionEvent(id) {
+      return dbQuery("softDeleteSessionEvent", db =>
+        db.from("session_events").update({ deleted_at: new Date().toISOString() }).eq("id", id).select().single()
+      );
+    }
+
+    async function createSettlement(payer_id, amount, distribution) {
+      return dbQuery("createSettlement", db =>
+        db.from("settlements").insert({ payer_id, amount, distribution }).select().single()
+      );
+    }
+
+    async function upsertLedgerBalance(player_id, balance) {
+      return dbQuery("upsertLedgerBalance", db =>
+        db.from("ledger_balances").upsert({ player_id, balance }, { onConflict: "player_id" }).select().single()
+      );
+    }
+
+    async function createSessionResult(session_id, player_id, net) {
+      return dbQuery("createSessionResult", db =>
+        db.from("session_results").insert({ session_id, player_id, net }).select().single()
+      );
+    }
+
+    async function updateSessionEvent(id, patch) {
+      return dbQuery("updateSessionEvent", db =>
+        db.from("session_events").update(patch).eq("id", id).select().single()
+      );
+    }
 
     // === ADMIN UI (chunk 4) ===
-    // Event wiring for admin controls. Filled in chunk 4.
+
+    // ── Auth gate (Chunk 3 — do not change) ──────────────────────────────────
+    function applyAuthGate() {
+      const loginArea     = document.getElementById("admin-login-area");
+      const adminControls = document.getElementById("admin-controls");
+      if (state.isAdmin) {
+        loginArea.classList.add("hidden");
+        adminControls.classList.remove("hidden");
+      } else {
+        loginArea.classList.remove("hidden");
+        adminControls.classList.add("hidden");
+      }
+    }
+
+    // ── Shared helpers ────────────────────────────────────────────────────────
+
+    function todayName() {
+      const d = new Date();
+      return `Session ${d.getDate()} ${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear()}`;
+    }
+
+    // Returns null if valid, or an error string.
+    function validateAmount(val) {
+      const n = Number(val);
+      if (!Number.isInteger(n))  return 'Enter a whole number.';
+      if (n < 10)                return 'Minimum amount is ₹10.';
+      if (n % 10 !== 0)          return 'Amount must be a multiple of ₹10.';
+      return null;
+    }
+
+    // Players currently in the open session roster.
+    function rosterPlayers() {
+      return state.players.filter(p => state.openSessionRoster.has(p.id));
+    }
+
+    function playerName(id) {
+      const p = state.players.find(p => p.id === id);
+      return p ? p.name : String(id).slice(0, 8);
+    }
+
+    // ── Roster ────────────────────────────────────────────────────────────────
+
+    // Union event players into the roster (does not remove in-memory picks).
+    function unionRosterFromEvents(events) {
+      events.forEach(e => {
+        state.openSessionRoster.add(e.player_id);
+        if (e.counterparty_id) state.openSessionRoster.add(e.counterparty_id);
+      });
+    }
+
+    // Surgically update all player <select> elements; preserves current selections.
+    function updatePlayerSelects() {
+      const roster = rosterPlayers();
+      const all    = state.players;
+
+      function repopulate(sel, options, keepVal) {
+        if (!sel) return;
+        const cur = keepVal ?? sel.value;
+        sel.innerHTML = options;
+        if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+      }
+
+      const rosterOpts = roster.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      repopulate(document.getElementById('event-player'), rosterOpts);
+      repopulate(document.getElementById('event-counterparty'), rosterOpts);
+
+      const notInRoster = all.filter(p => !state.openSessionRoster.has(p.id));
+      repopulate(document.getElementById('roster-player-pick'),
+        `<option value="">Pick player…</option>` +
+        notInRoster.map(p => `<option value="${p.id}">${p.name}</option>`).join(''));
+
+      repopulate(document.getElementById('settlement-payer'),
+        `<option value="">Select payer…</option>` +
+        all.map(p => `<option value="${p.id}">${p.name}</option>`).join(''));
+    }
+
+    // ── Session list ──────────────────────────────────────────────────────────
+
+    function renderAdminSessionList() {
+      const listDiv = document.getElementById('session-list-items');
+      if (!listDiv) return;
+      const active   = state.sessions.filter(s => s.status === 'active');
+      const closed   = state.sessions.filter(s => s.status === 'closed');
+      let html = '';
+      if (!active.length && !closed.length) {
+        html = '<p class="text-gray-500 text-sm">No sessions yet.</p>';
+      } else {
+        if (active.length) {
+          html += '<p class="text-xs text-gray-400 mb-1">Active</p>';
+          active.forEach(s => {
+            html += `<button class="w-full bg-gray-800 hover:bg-gray-700 rounded-xl p-3 text-left flex justify-between items-center mb-1"
+              onclick="openSession('${s.id}')">
+              <span class="text-sm font-medium">${s.name}</span>
+              <span class="text-xs text-green-400">active →</span>
+            </button>`;
+          });
+        }
+        if (closed.length) {
+          html += '<p class="text-xs text-gray-400 mb-1 mt-2">Needs Ledger Update</p>';
+          closed.forEach(s => {
+            html += `<button class="w-full bg-gray-800 hover:bg-gray-700 rounded-xl p-3 text-left flex justify-between items-center mb-1"
+              onclick="openSession('${s.id}')">
+              <span class="text-sm font-medium">${s.name}</span>
+              <span class="text-xs text-yellow-400">closed →</span>
+            </button>`;
+          });
+        }
+      }
+      listDiv.innerHTML = html;
+      updatePlayerSelects();
+    }
+
+    // ── Open / close session view ─────────────────────────────────────────────
+
+    function openSession(sessionId) {
+      state.openSessionId      = sessionId;
+      state.openSessionRoster  = new Set();
+      state.openSessionEvents  = [];
+      state.editingEventId     = null;
+      state.editDraft          = { amount: '', note: '' };
+      state.selectedEventType  = 'buyin';
+
+      document.getElementById('admin-session-list').classList.add('hidden');
+      document.getElementById('admin-session-view').classList.remove('hidden');
+
+      const session = state.sessions.find(s => s.id === sessionId);
+      renderSessionViewShell(session);
+
+      if (db) {
+        getSessionEvents(sessionId).then(evts => {
+          state.openSessionEvents = evts || [];
+          unionRosterFromEvents(state.openSessionEvents);
+          updatePlayerSelects();
+          renderSessionLog();
+          renderSessionTotals();
+        }).catch(e => console.warn('[SESSION] load events failed:', e.message));
+      }
+    }
+
+    function backToSessionList() {
+      state.openSessionId     = null;
+      state.openSessionEvents = [];
+      state.openSessionRoster = new Set();
+      state.editingEventId    = null;
+      document.getElementById('admin-session-view').classList.add('hidden');
+      document.getElementById('admin-session-list').classList.remove('hidden');
+      renderAdminSessionList();
+    }
+
+    // Renders the static shell (title, badge, form visibility, Part B buttons).
+    function renderSessionViewShell(session) {
+      if (!session) return;
+      document.getElementById('session-view-title').textContent = session.name;
+
+      const badge  = document.getElementById('session-status-badge');
+      const colors = { active: 'bg-green-900 text-green-300', closed: 'bg-yellow-900 text-yellow-300', finalized: 'bg-gray-700 text-gray-400' };
+      badge.className  = 'text-xs px-2 py-0.5 rounded-full font-medium ' + (colors[session.status] || 'bg-gray-700 text-gray-400');
+      badge.textContent = session.status;
+
+      const isActive    = session.status === 'active';
+      const isClosed    = session.status === 'closed';
+      const isImmutable = !isActive;
+
+      document.getElementById('session-entry-form').classList.toggle('hidden', isImmutable);
+      document.getElementById('session-immutable-notice').classList.toggle('hidden', !isImmutable);
+      if (isImmutable) document.getElementById('immutable-status-word').textContent = session.status;
+
+      document.getElementById('btn-close-session').classList.toggle('hidden', !isActive);
+      document.getElementById('close-confirm-dialog').classList.add('hidden');
+      document.getElementById('update-ledger-area').classList.toggle('hidden', !isClosed);
+      document.getElementById('update-ledger-preview').classList.add('hidden');
+      document.getElementById('btn-show-update-ledger').classList.remove('hidden');
+
+      if (isActive) setEventType('buyin');
+    }
+
+    // ── Event type selection ──────────────────────────────────────────────────
+
+    function setEventType(type) {
+      state.selectedEventType = type;
+      document.querySelectorAll('.evt-type-btn').forEach(btn => {
+        const on = btn.dataset.type === type;
+        btn.classList.toggle('bg-indigo-600', on);
+        btn.classList.toggle('text-white', on);
+        btn.classList.toggle('bg-gray-700', !on);
+      });
+      const label = document.getElementById('event-player-label');
+      const cpRow = document.getElementById('event-counterparty-row');
+      if (type === 'transfer') { label.textContent = 'From (payer)'; cpRow.classList.remove('hidden'); }
+      else if (type === 'expense') { label.textContent = 'Fronted by'; cpRow.classList.add('hidden'); }
+      else { label.textContent = 'Player'; cpRow.classList.add('hidden'); }
+    }
+
+    // ── A3: Event submit ──────────────────────────────────────────────────────
+
+    async function submitEvent() {
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status !== 'active') return;
+
+      const errEl = document.getElementById('event-error');
+      errEl.classList.add('hidden');
+
+      const type       = state.selectedEventType;
+      const playerId   = document.getElementById('event-player').value;
+      const cpId       = type === 'transfer' ? document.getElementById('event-counterparty').value : null;
+      const amountRaw  = document.getElementById('event-amount').value;
+      const note       = document.getElementById('event-note').value.trim();
+
+      if (!playerId)                              { showEventError('Select a player.');                          return; }
+      if (type === 'transfer' && (!cpId || cpId === playerId)) { showEventError('Choose a different receiver.'); return; }
+
+      const amtErr = validateAmount(amountRaw);
+      if (amtErr) { showEventError(amtErr); return; }
+      const amount = parseInt(amountRaw, 10);
+
+      const evt = { session_id: state.openSessionId, type, player_id: playerId, amount };
+      if (cpId)  evt.counterparty_id = cpId;
+      if (note)  evt.note = note;
+
+      try {
+        await createSessionEvent(evt);
+        document.getElementById('event-amount').value = '';
+        document.getElementById('event-note').value   = '';
+        await refreshSessionEvents();
+      } catch (e) { showEventError('Save failed: ' + e.message); }
+    }
+
+    function showEventError(msg) {
+      const el = document.getElementById('event-error');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    // ── A4: Log render (poll-safe — only touches #session-log) ───────────────
+
+    function renderSessionLog() {
+      const logDiv = document.getElementById('session-log');
+      if (!logDiv) return;
+      const events  = state.openSessionEvents;
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      const isActive = session && session.status === 'active';
+
+      if (!events.length) {
+        logDiv.innerHTML = '<p class="text-gray-500 text-sm">No events yet.</p>';
+        return;
+      }
+
+      const sorted = [...events].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      logDiv.innerHTML = sorted.map(e => {
+        // Inline edit row — uses state.editDraft so poll ticks don't wipe typing
+        if (state.editingEventId === e.id) {
+          const safeNote = (state.editDraft.note || '').replace(/"/g, '&quot;');
+          return `<div class="bg-gray-700 rounded-xl p-3">
+            <p class="text-xs text-gray-400 mb-2">${e.type} · ${playerName(e.player_id)}</p>
+            <input type="number" inputmode="numeric" id="edit-amount-${e.id}"
+              value="${state.editDraft.amount}"
+              oninput="state.editDraft.amount=this.value"
+              class="w-full rounded-lg bg-gray-600 px-3 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Amount" />
+            <input type="text" id="edit-note-${e.id}"
+              value="${safeNote}"
+              oninput="state.editDraft.note=this.value"
+              class="w-full rounded-lg bg-gray-600 px-3 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Note" />
+            <p id="edit-error-${e.id}" class="text-red-400 text-xs mb-2 hidden"></p>
+            <div class="flex gap-2">
+              <button class="flex-1 bg-indigo-600 hover:bg-indigo-500 rounded-lg py-2 text-sm font-medium"
+                onclick="saveEventEdit('${e.id}')">Save</button>
+              <button class="flex-1 bg-gray-600 hover:bg-gray-500 rounded-lg py-2 text-sm font-medium"
+                onclick="cancelEventEdit()">Cancel</button>
+            </div>
+          </div>`;
+        }
+
+        const note       = e.note ? ` <span class="text-gray-500">· ${e.note}</span>` : '';
+        const counterparty = e.counterparty_id ? ` → ${playerName(e.counterparty_id)}` : '';
+        const actions = isActive
+          ? `<div class="flex gap-2 mt-2">
+              <button class="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5"
+                onclick="startEventEdit('${e.id}', ${e.amount}, ${JSON.stringify(e.note || '')})">Edit</button>
+              <button class="text-xs bg-red-900 hover:bg-red-800 rounded-lg px-3 py-1.5"
+                onclick="undoEvent('${e.id}')">Undo</button>
+            </div>` : '';
+
+        return `<div class="bg-gray-800 rounded-xl p-3">
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold text-indigo-400 uppercase">${e.type}</span>
+            <span class="text-sm font-semibold">${formatINR(e.amount)}</span>
+          </div>
+          <p class="text-sm mt-0.5">${playerName(e.player_id)}${counterparty}${note}</p>
+          ${actions}
+        </div>`;
+      }).join('');
+    }
+
+    // ── A4: Edit helpers ──────────────────────────────────────────────────────
+
+    function startEventEdit(id, amount, note) {
+      state.editingEventId = id;
+      state.editDraft      = { amount: String(amount), note: note || '' };
+      renderSessionLog();
+    }
+
+    function cancelEventEdit() {
+      state.editingEventId = null;
+      state.editDraft      = { amount: '', note: '' };
+      renderSessionLog();
+    }
+
+    async function saveEventEdit(id) {
+      const amtErr = validateAmount(state.editDraft.amount);
+      const errEl  = document.getElementById('edit-error-' + id);
+      if (amtErr) {
+        if (errEl) { errEl.textContent = amtErr; errEl.classList.remove('hidden'); }
+        return;
+      }
+      try {
+        await updateSessionEvent(id, {
+          amount: parseInt(state.editDraft.amount, 10),
+          note:   state.editDraft.note || null,
+        });
+        state.editingEventId = null;
+        state.editDraft      = { amount: '', note: '' };
+        await refreshSessionEvents();
+      } catch (e) {
+        if (errEl) { errEl.textContent = 'Save failed: ' + e.message; errEl.classList.remove('hidden'); }
+      }
+    }
+
+    async function undoEvent(id) {
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status !== 'active') return;
+      try {
+        await softDeleteSessionEvent(id);
+        await refreshSessionEvents();
+      } catch (e) { console.warn('[ADMIN] undoEvent failed:', e.message); }
+    }
+
+    // ── A5: Totals render (poll-safe — only touches #session-totals) ──────────
+
+    function renderSessionTotals() {
+      const div = document.getElementById('session-totals');
+      if (!div) return;
+      const events = state.openSessionEvents;
+      const roster = rosterPlayers();
+
+      if (!events.length || !roster.length) {
+        div.innerHTML = '<p class="text-gray-500 text-sm">No data yet.</p>';
+        return;
+      }
+
+      const { perPlayer }                          = computeSessionResults(roster, events);
+      const { chipsIn, chipsOut, balanced, difference } = checkTableBalance(events);
+
+      let html = '<p class="text-sm font-medium text-gray-300 mb-2">Live Totals</p><div class="space-y-1 mb-3">';
+      roster.forEach(p => {
+        const pp  = perPlayer[p.id] || { net: 0 };
+        const col = pp.net > 0 ? 'text-green-400' : pp.net < 0 ? 'text-red-400' : 'text-gray-400';
+        html += `<div class="flex justify-between text-sm">
+          <span>${p.name}</span><span class="${col} font-medium">${formatINR(pp.net)}</span>
+        </div>`;
+      });
+      html += '</div>';
+
+      const balCol = balanced ? 'text-green-400' : 'text-yellow-400';
+      html += `<div class="${balCol} text-xs">Chips in: ${formatINR(chipsIn)} · out: ${formatINR(chipsOut)}`;
+      if (!balanced) html += ` · ⚠ Δ${formatINR(difference)}`;
+      html += '</div>';
+
+      div.innerHTML = html;
+    }
+
+    // Refresh events from DB after any write; unions roster; re-renders log+totals.
+    async function refreshSessionEvents() {
+      if (!state.openSessionId) return;
+      try {
+        const evts = await getSessionEvents(state.openSessionId);
+        state.openSessionEvents = evts || [];
+        unionRosterFromEvents(state.openSessionEvents);
+        updatePlayerSelects();
+        renderSessionLog();
+        renderSessionTotals();
+      } catch (e) { console.warn('[ADMIN] refreshSessionEvents failed:', e.message); }
+    }
+
+    // ── renderAdminControls: called by renderAll() on every poll tick ─────────
+
+    function renderAdminControls() {
+      if (!state.isAdmin) return;
+      if (!document.getElementById('admin-session-list').classList.contains('hidden')) {
+        renderAdminSessionList();
+      }
+      if (state.openSessionId) {
+        // Update status badge from freshly fetched sessions (don't re-render shell)
+        const session = state.sessions.find(s => s.id === state.openSessionId);
+        if (session) {
+          const badge  = document.getElementById('session-status-badge');
+          if (badge) badge.textContent = session.status;
+        }
+        renderSessionLog();
+        renderSessionTotals();
+      }
+    }
+
+    // ── PART B: Close session ─────────────────────────────────────────────────
+
+    async function initiateCloseSession() {
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status !== 'active') return;
+
+      const { balanced, chipsIn, chipsOut, difference } = checkTableBalance(state.openSessionEvents);
+      const warnEl = document.getElementById('close-warning-text');
+
+      if (balanced) {
+        warnEl.textContent = 'Close this session? This action is irreversible.';
+      } else {
+        warnEl.textContent =
+          `⚠ Chip imbalance — in: ${formatINR(chipsIn)}, out: ${formatINR(chipsOut)} (delta ${formatINR(difference)}). Close anyway?`;
+      }
+
+      document.getElementById('btn-close-session').classList.add('hidden');
+      document.getElementById('close-confirm-dialog').classList.remove('hidden');
+    }
+
+    async function confirmCloseSession() {
+      try {
+        await updateSession(state.openSessionId, { status: 'closed', closed_at: new Date().toISOString() });
+        await refreshData();
+        const session = state.sessions.find(s => s.id === state.openSessionId);
+        renderSessionViewShell(session);
+        renderSessionLog();
+        renderSessionTotals();
+      } catch (e) { console.warn('[ADMIN] confirmCloseSession failed:', e.message); }
+    }
+
+    // ── PART B: Update Ledger ─────────────────────────────────────────────────
+
+    async function showUpdateLedgerPreview() {
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status !== 'closed') return;
+
+      // Idempotent guard
+      try {
+        const existing = await getSessionResults(state.openSessionId);
+        if (existing && existing.length > 0) {
+          document.getElementById('ledger-nets-table').innerHTML =
+            '<p class="text-yellow-400 text-sm">Ledger already posted for this session.</p>';
+          document.getElementById('update-ledger-preview').classList.remove('hidden');
+          document.getElementById('btn-show-update-ledger').classList.add('hidden');
+          return;
+        }
+      } catch (e) { console.warn('[ADMIN] getSessionResults failed:', e.message); return; }
+
+      const roster = rosterPlayers();
+      if (!roster.length) { alert('No players in session roster.'); return; }
+
+      computeAndShowLedgerNets(roster);
+    }
+
+    function computeAndShowLedgerNets(roster, override) {
+      const { perPlayer, needsExpenseOverride, suggestedEqualSplit } =
+        computeSessionResults(roster, state.openSessionEvents, override);
+
+      const netsTable   = document.getElementById('ledger-nets-table');
+      const overrideArea = document.getElementById('expense-override-area');
+
+      netsTable.innerHTML = roster.map(p => {
+        const pp  = perPlayer[p.id] || { net: 0 };
+        const col = pp.net > 0 ? 'text-green-400' : pp.net < 0 ? 'text-red-400' : 'text-gray-400';
+        return `<div class="flex justify-between">
+          <span>${p.name}</span>
+          <span class="${col} font-medium">${formatINR(pp.net)}</span>
+        </div>`;
+      }).join('');
+
+      if (needsExpenseOverride && !override) {
+        // Show override UI; default to suggestedEqualSplit
+        state.expenseOverrideDraft = { ...suggestedEqualSplit };
+        overrideArea.classList.remove('hidden');
+        document.getElementById('expense-override-inputs').innerHTML = roster.map(p =>
+          `<div class="flex items-center gap-2">
+            <span class="text-sm flex-1">${p.name}</span>
+            <input type="number" inputmode="numeric" id="override-${p.id}"
+              value="${suggestedEqualSplit[p.id] || 0}"
+              oninput="state.expenseOverrideDraft['${p.id}']=parseInt(this.value)||0"
+              class="w-24 rounded-lg bg-gray-600 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>`
+        ).join('');
+      } else {
+        overrideArea.classList.add('hidden');
+      }
+
+      document.getElementById('update-ledger-preview').classList.remove('hidden');
+      document.getElementById('btn-show-update-ledger').classList.add('hidden');
+    }
+
+    function recalculateLedgerPreview() {
+      const roster = rosterPlayers();
+      // Read current input values into draft
+      roster.forEach(p => {
+        const inp = document.getElementById('override-' + p.id);
+        if (inp) state.expenseOverrideDraft[p.id] = parseInt(inp.value, 10) || 0;
+      });
+      computeAndShowLedgerNets(roster, state.expenseOverrideDraft);
+    }
+
+    async function confirmUpdateLedger() {
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status !== 'closed') {
+        console.warn('[ADMIN] confirmUpdateLedger: session not closed'); return;
+      }
+
+      const errEl = document.getElementById('ledger-preview-error');
+      errEl.classList.add('hidden');
+
+      // Idempotency guard: if session_results already exist, this session was already posted.
+      const existingResults = await getSessionResults(state.openSessionId);
+      if (existingResults && existingResults.length > 0) {
+        errEl.textContent = 'Ledger already posted for this session.';
+        errEl.classList.remove('hidden');
+        document.getElementById('btn-ledger-confirm-yes').classList.add('hidden');
+        return;
+      }
+
+      const roster = rosterPlayers();
+      // Determine whether to use override
+      const { needsExpenseOverride } = computeSessionResults(roster, state.openSessionEvents);
+      const override = needsExpenseOverride && Object.keys(state.expenseOverrideDraft).length
+        ? state.expenseOverrideDraft : undefined;
+      const { perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
+
+      try {
+        // Write session_results first — these act as the "already posted" marker.
+        await Promise.all(roster.map(p => {
+          const net = (perPlayer[p.id] || { net: 0 }).net;
+          return createSessionResult(state.openSessionId, p.id, net);
+        }));
+        // Then update ledger balances.
+        await Promise.all(roster.map(p => {
+          const net    = (perPlayer[p.id] || { net: 0 }).net;
+          const curBal = state.ledgerBalances[p.id] || 0;
+          const newBal = curBal + net;           // integer add, ₹10-clean (engine ensures it)
+          return upsertLedgerBalance(p.id, newBal);
+        }));
+        // Finally mark the session finalized.
+        await updateSession(state.openSessionId, { status: 'finalized', finalized_at: new Date().toISOString() });
+        await refreshData();
+        const updated = state.sessions.find(s => s.id === state.openSessionId);
+        renderSessionViewShell(updated);
+      } catch (e) {
+        errEl.textContent = 'Post failed: ' + e.message;
+        errEl.classList.remove('hidden');
+        console.warn('[ADMIN] confirmUpdateLedger failed:', e.message);
+      }
+    }
+
+    // ── PART B: Settlement ────────────────────────────────────────────────────
+
+    let settlementDraft = null;   // { payer_id, amount, received, balancesAfter, leftover }
+
+    async function previewSettlement() {
+      const errEl = document.getElementById('settlement-error');
+      errEl.classList.add('hidden');
+      document.getElementById('settlement-preview-area').classList.add('hidden');
+
+      const payerId   = document.getElementById('settlement-payer').value;
+      const amountRaw = document.getElementById('settlement-amount').value;
+
+      if (!payerId) { showSettlementError('Select a payer.'); return; }
+      const amtErr = validateAmount(amountRaw);
+      if (amtErr)   { showSettlementError(amtErr); return; }
+      const amount = parseInt(amountRaw, 10);
+
+      // Use current ledger balances (numeric, keyed by player_id)
+      const balances = {};
+      Object.entries(state.ledgerBalances).forEach(([pid, bal]) => { balances[pid] = Number(bal); });
+
+      const result = distributeSettlement(balances, payerId, amount);
+      settlementDraft = { payer_id: payerId, amount, ...result };
+
+      const tbl     = document.getElementById('settlement-distribution-table');
+      const entries = Object.entries(result.received);
+      if (!entries.length) {
+        tbl.innerHTML = '<p class="text-gray-400 text-xs">No positive balances — payer will hold the full amount as credit.</p>';
+      } else {
+        tbl.innerHTML = entries.map(([pid, rcv]) =>
+          `<div class="flex justify-between">
+            <span>${playerName(pid)}</span>
+            <span class="text-green-400 font-medium">receives ${formatINR(rcv)}</span>
+          </div>`
+        ).join('');
+      }
+      if (result.leftover > 0) {
+        tbl.innerHTML += `<p class="text-yellow-400 text-xs mt-1">Overpay: ${formatINR(result.leftover)} held as ${playerName(payerId)}'s credit.</p>`;
+      }
+
+      document.getElementById('settlement-preview-area').classList.remove('hidden');
+    }
+
+    function showSettlementError(msg) {
+      const el = document.getElementById('settlement-error');
+      el.textContent = msg; el.classList.remove('hidden');
+    }
+
+    async function confirmSettlement() {
+      if (!settlementDraft) return;
+      const { payer_id, amount, received, balancesAfter } = settlementDraft;
+
+      try {
+        await createSettlement(payer_id, amount, received);
+        // Apply new balances for all affected players
+        const affected = new Set([payer_id, ...Object.keys(received)]);
+        await Promise.all([...affected].map(pid => {
+          const newBal = balancesAfter[pid] !== undefined
+            ? balancesAfter[pid]
+            : (state.ledgerBalances[pid] || 0);
+          return upsertLedgerBalance(pid, newBal);
+        }));
+        await refreshData();
+        // Reset form
+        settlementDraft = null;
+        document.getElementById('settlement-amount').value = '';
+        document.getElementById('settlement-payer').value  = '';
+        document.getElementById('settlement-preview-area').classList.add('hidden');
+        updatePlayerSelects();
+      } catch (e) {
+        showSettlementError('Settlement failed: ' + e.message);
+        console.warn('[ADMIN] confirmSettlement failed:', e.message);
+      }
+    }
+
+    // Expose functions used from onclick attributes in dynamic HTML
+    window.openSession    = openSession;
+    window.startEventEdit = startEventEdit;
+    window.saveEventEdit  = saveEventEdit;
+    window.cancelEventEdit = cancelEventEdit;
+    window.undoEvent      = undoEvent;
 
     // === VIEWER UI (chunk 5) ===
-    // Render functions for all read-only screens. Filled in chunk 5.
-    //
-    // renderLedger(), renderLive(), renderHistory(), renderLeaderboards()
+    // Stubs — filled in chunk 5.
+
+    function renderLedger()       { /* chunk 5 */ }
+    function renderLive()         { /* chunk 5 */ }
+    function renderHistory()      { /* chunk 5 */ }
+    function renderLeaderboards() { /* chunk 5 */ }
+
+    function renderAll() {
+      renderLedger();
+      renderLive();
+      renderHistory();
+      renderLeaderboards();
+      renderAdminControls();
+    }
 
     // === NAV / INIT ===
 
@@ -153,12 +1400,208 @@
       state.currentScreen = name;
     }
 
-    document.querySelectorAll(".nav-btn").forEach(btn => {
-      btn.addEventListener("click", () => showScreen(btn.dataset.screen));
-    });
+    // ── Polling ───────────────────────────────────────────────────────────────
 
-    // Boot
-    showScreen("ledger");
+    let isRefreshing = false;
+
+    async function refreshData() {
+      if (!db) { console.warn("[POLL] db is null — skipping refresh"); return; }
+      if (isRefreshing) return;
+      isRefreshing = true;
+      try {
+        const [players, sessions, balances] = await Promise.all([
+          getPlayers(),
+          getSessions(),
+          getLedgerBalances(),
+        ]);
+        state.players        = players  || [];
+        state.sessions       = sessions || [];
+        state.activeSessions = (sessions || []).filter(s => s.status === "active");
+        state.ledgerBalances = {};
+        (balances || []).forEach(row => { state.ledgerBalances[row.player_id] = row.balance; });
+
+        // If a session is open, also refresh its events for log/totals (poll-safe).
+        // Only union-add to roster — never remove in-memory picks.
+        if (state.openSessionId) {
+          const evts = await getSessionEvents(state.openSessionId);
+          state.openSessionEvents = evts || [];
+          unionRosterFromEvents(state.openSessionEvents);
+        }
+
+        // TEMPORARY sync indicator (removed in Chunk 6)
+        const now = new Date().toLocaleTimeString();
+        const ind = document.getElementById("sync-indicator");
+        if (ind) ind.textContent = `Synced ${now} · ${state.players.length} player${state.players.length !== 1 ? "s" : ""}`;
+
+        renderAll();
+      } catch (e) {
+        console.warn("[POLL] refreshData error:", e.message);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // ── DOMContentLoaded ─────────────────────────────────────────────────────
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Nav tab switching
+      document.querySelectorAll(".nav-btn").forEach(btn => {
+        btn.addEventListener("click", () => showScreen(btn.dataset.screen));
+      });
+
+      // Engine self-test button
+      document.getElementById("btn-run-tests").addEventListener("click", () => {
+        const summary = runEngineTests();
+        const out = document.getElementById("test-results");
+        out.classList.remove("hidden");
+        const lines = summary.tests.map(t => (t.pass ? "✓ PASS" : "✗ FAIL") + "  " + t.name);
+        lines.push("");
+        lines.push(`${summary.passed}/${summary.total} passed, ${summary.failed} failed`);
+        out.textContent = lines.join("\n");
+        out.style.color = summary.failed === 0 ? "#4ade80" : "#f87171";
+      });
+
+      // Login button
+      document.getElementById("btn-login").addEventListener("click", async () => {
+        if (!db) { console.warn("[AUTH] db is null — cannot sign in"); return; }
+        const email    = document.getElementById("admin-email").value.trim();
+        const password = document.getElementById("admin-password").value;
+        const errEl    = document.getElementById("login-error");
+        errEl.classList.add("hidden");
+        errEl.textContent = "";
+        const { error } = await db.auth.signInWithPassword({ email, password });
+        if (error) {
+          errEl.textContent = error.message;
+          errEl.classList.remove("hidden");
+        } else {
+          document.getElementById("admin-password").value = "";
+        }
+      });
+
+      // Logout button
+      document.getElementById("btn-logout").addEventListener("click", async () => {
+        if (!db) { console.warn("[AUTH] db is null — cannot sign out"); return; }
+        await db.auth.signOut();
+      });
+
+      // ── Chunk 4: Admin UI wiring ────────────────────────────────────────────
+
+      // Default session name when field is first focused
+      document.getElementById('new-session-name').addEventListener('focus', function () {
+        if (!this.value) this.value = todayName();
+      });
+
+      // Create session
+      document.getElementById('btn-create-session').addEventListener('click', async () => {
+        const name = document.getElementById('new-session-name').value.trim() || todayName();
+        try {
+          const session = await createSession(name);
+          document.getElementById('new-session-name').value = '';
+          await refreshData();
+          openSession(session.id);
+        } catch (e) { console.warn('[ADMIN] createSession failed:', e.message); }
+      });
+      document.getElementById('new-session-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btn-create-session').click();
+      });
+
+      // Back to session list
+      document.getElementById('btn-back-sessions').addEventListener('click', backToSessionList);
+
+      // Event type buttons
+      document.querySelectorAll('.evt-type-btn').forEach(btn => {
+        btn.addEventListener('click', () => setEventType(btn.dataset.type));
+      });
+
+      // Amount quick-add buttons
+      document.querySelectorAll('.amt-quick').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const inp = document.getElementById('event-amount');
+          if (btn.id === 'btn-amt-clear') { inp.value = ''; return; }
+          inp.value = (parseInt(inp.value, 10) || 0) + parseInt(btn.dataset.add, 10);
+        });
+      });
+
+      // Roster add from picker
+      document.getElementById('btn-roster-add').addEventListener('click', () => {
+        const pid = document.getElementById('roster-player-pick').value;
+        if (!pid) return;
+        state.openSessionRoster.add(pid);
+        updatePlayerSelects();
+      });
+
+      // Quick-create player
+      document.getElementById('btn-quick-add-player').addEventListener('click', async () => {
+        const name = document.getElementById('quick-add-player-name').value.trim();
+        if (!name) return;
+        try {
+          const player = await createPlayer(name);
+          // Optimistically push into state so playerName() works immediately
+          state.players.push(player);
+          state.openSessionRoster.add(player.id);
+          document.getElementById('quick-add-player-name').value = '';
+          updatePlayerSelects();
+        } catch (e) { console.warn('[ADMIN] createPlayer failed:', e.message); }
+      });
+      document.getElementById('quick-add-player-name').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btn-quick-add-player').click();
+      });
+
+      // Submit event
+      document.getElementById('btn-submit-event').addEventListener('click', submitEvent);
+
+      // Close session
+      document.getElementById('btn-close-session').addEventListener('click', initiateCloseSession);
+      document.getElementById('btn-close-yes').addEventListener('click', async () => {
+        document.getElementById('close-confirm-dialog').classList.add('hidden');
+        await confirmCloseSession();
+      });
+      document.getElementById('btn-close-no').addEventListener('click', () => {
+        document.getElementById('close-confirm-dialog').classList.add('hidden');
+        document.getElementById('btn-close-session').classList.remove('hidden');
+      });
+
+      // Update Ledger
+      document.getElementById('btn-show-update-ledger').addEventListener('click', showUpdateLedgerPreview);
+      document.getElementById('btn-recalculate-ledger').addEventListener('click', recalculateLedgerPreview);
+      document.getElementById('btn-ledger-confirm-yes').addEventListener('click', confirmUpdateLedger);
+      document.getElementById('btn-ledger-cancel').addEventListener('click', () => {
+        document.getElementById('update-ledger-preview').classList.add('hidden');
+        document.getElementById('btn-show-update-ledger').classList.remove('hidden');
+      });
+
+      // Settlement
+      document.getElementById('btn-settlement-preview').addEventListener('click', previewSettlement);
+      document.getElementById('btn-settlement-confirm').addEventListener('click', confirmSettlement);
+      document.getElementById('btn-settlement-cancel').addEventListener('click', () => {
+        settlementDraft = null;
+        document.getElementById('settlement-preview-area').classList.add('hidden');
+      });
+
+      // Auth init: restore existing session, then subscribe to changes
+      if (db) {
+        db.auth.getSession().then(({ data: { session } }) => {
+          state.session = session;
+          state.isAdmin = !!session;
+          state.admin   = session ? session.user : null;
+          applyAuthGate();
+        });
+
+        db.auth.onAuthStateChange((_event, session) => {
+          state.session = session;
+          state.isAdmin = !!session;
+          state.admin   = session ? session.user : null;
+          applyAuthGate();
+        });
+      } else {
+        applyAuthGate(); // db null → not admin, show login form
+      }
+
+      // Boot: show default screen, run first fetch, start polling
+      showScreen("ledger");
+      refreshData();
+      state.pollTimer = setInterval(refreshData, 4000);
+    });
   </script>
 </body>
 </html>
