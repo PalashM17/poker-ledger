@@ -307,6 +307,7 @@
       allSessionResults: [],       // every session_results row (all sessions)
       settlements: [],             // every settlements row
       activeSessionEvents: {},     // { sessionId: [events] } for each active session
+      leaderboardWindow: '30d',    // '7d' | '30d' | 'all' — persists across poll ticks
     };
 
     // === ACCOUNTING ENGINE (chunk 2) ===
@@ -1367,6 +1368,7 @@
     }
 
     // Expose functions used from onclick attributes in dynamic HTML
+    window.setLeaderboardWindow = setLeaderboardWindow;
     window.openSession    = openSession;
     window.startEventEdit = startEventEdit;
     window.saveEventEdit  = saveEventEdit;
@@ -1643,49 +1645,98 @@
       return { maxWin, maxLoss };
     }
 
+    // Pure: per-player stats over finalized sessions with finalized_at >= sinceMs (0 = all time).
+    function aggregatePlayerStats(sessions, allSessionResults, sinceMs) {
+      const qualIds = new Set(
+        sessions
+          .filter(s => s.status === 'finalized' && (sinceMs === 0 || new Date(s.finalized_at).getTime() >= sinceMs))
+          .map(s => s.id)
+      );
+      const stats = {};
+      allSessionResults.forEach(r => {
+        if (!qualIds.has(r.session_id)) return;
+        if (!stats[r.player_id]) stats[r.player_id] = { net: 0, games: 0, wins: 0 };
+        stats[r.player_id].net   += r.net;
+        stats[r.player_id].games += 1;
+        if (r.net > 0) stats[r.player_id].wins += 1;
+      });
+      return stats;
+    }
+
+    function setLeaderboardWindow(w) {
+      state.leaderboardWindow = w;
+      renderLeaderboards();
+    }
+
     function renderLeaderboards() {
       const el = document.getElementById('screen-leaderboards');
       if (!el) return;
 
-      const now     = Date.now();
-      const ms7d    = now - 7  * 24 * 60 * 60 * 1000;
-      const ms30d   = now - 30 * 24 * 60 * 60 * 1000;
+      const w = state.leaderboardWindow || '30d';
+      const now = Date.now();
+      const sinceMs = w === '7d' ? now - 7 * 24 * 60 * 60 * 1000 : w === '30d' ? now - 30 * 86400000 : 0;
 
-      const net7    = aggregateNetByPlayer(state.sessions, state.allSessionResults, ms7d);
-      const net30   = aggregateNetByPlayer(state.sessions, state.allSessionResults, ms30d);
-      const { winner: w7,  loser: l7  } = topAndBottom(net7);
-      const { winner: w30, loser: l30 } = topAndBottom(net30);
+      const statsMap = aggregatePlayerStats(state.sessions, state.allSessionResults, sinceMs);
       const { maxWin, maxLoss } = biggestSingle(state.allSessionResults);
 
-      const last10 = [...state.sessions]
-        .filter(s => s.status === 'finalized')
-        .sort((a, b) => new Date(b.finalized_at) - new Date(a.finalized_at))
-        .slice(0, 10);
+      // Toggle
+      const tabs = [['7d', 'Week'], ['30d', 'Month'], ['all', 'All time']];
+      let toggleHtml = '<div class="flex bg-gray-800 rounded-2xl p-1 mb-4">';
+      tabs.forEach(([val, label]) => {
+        const active = w === val;
+        toggleHtml += `<button onclick="setLeaderboardWindow('${val}')"
+          class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'}">
+          ${label}
+        </button>`;
+      });
+      toggleHtml += '</div>';
 
-      const noData = '<p class="text-gray-500 text-sm">Not enough data yet.</p>';
+      // Standings list sorted net descending
+      const standingPlayers = Object.entries(statsMap)
+        .map(([id, s]) => ({ id, ...s }))
+        .filter(p => p.games >= 1)
+        .sort((a, b) => b.net - a.net);
 
-      function card(title, body) {
-        return `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
-          <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">${title}</p>
-          ${body}
-        </div>`;
+      const noDataPeriod = '<p class="text-gray-500 text-sm">No games in this period yet.</p>';
+
+      let standingsHtml = noDataPeriod;
+      if (standingPlayers.length) {
+        standingsHtml = '';
+        standingPlayers.forEach((p, i) => {
+          const winRate = p.games > 0 ? Math.round(p.wins / p.games * 100) : 0;
+          const avg = p.games > 0 ? roundToTen(p.net / p.games) : 0;
+          const netCol = p.net > 0 ? 'text-green-400' : p.net < 0 ? 'text-red-400' : 'text-gray-400';
+          const avatarBg = p.net > 0 ? 'bg-green-900 text-green-300' : p.net < 0 ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-300';
+          const name = playerName(p.id);
+          standingsHtml += `<div class="flex items-center gap-3 py-3 border-b border-gray-700 last:border-0">
+            <span class="text-gray-500 text-sm w-5 text-center shrink-0">${i + 1}</span>
+            <div class="${avatarBg} rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold shrink-0">${name.charAt(0).toUpperCase()}</div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold">${name}</p>
+              <p class="text-xs text-gray-400 leading-relaxed">${p.games} games · ${winRate}% win · avg ${formatINR(avg)}</p>
+            </div>
+            <span class="${netCol} text-sm font-semibold shrink-0">${formatINR(p.net)}</span>
+          </div>`;
+        });
       }
 
-      function winnerLoserRows(w, l) {
-        if (!w && !l) return noData;
-        let html = '<div class="space-y-2">';
-        if (w) html += `<div class="flex justify-between items-center">
-          <div><p class="text-xs text-gray-500">Winner</p><p class="text-base font-semibold">${playerName(w.id)}</p></div>
-          <span class="text-green-400 text-lg font-bold">${formatINR(w.net)}</span>
-        </div>`;
-        if (l) html += `<div class="flex justify-between items-center">
-          <div><p class="text-xs text-gray-500">Loser</p><p class="text-base font-semibold">${playerName(l.id)}</p></div>
-          <span class="text-red-400 text-lg font-bold">${formatINR(l.net)}</span>
-        </div>`;
-        html += '</div>';
-        return html;
+      // Attendance board sorted games descending, tiebreak by net
+      const attendancePlayers = [...standingPlayers].sort((a, b) => b.games - a.games || b.net - a.net);
+      let attendanceHtml = noDataPeriod;
+      if (attendancePlayers.length) {
+        attendanceHtml = '';
+        attendancePlayers.forEach((p, i) => {
+          const winRate = p.games > 0 ? Math.round(p.wins / p.games * 100) : 0;
+          attendanceHtml += `<div class="flex items-center gap-3 py-2.5 border-b border-gray-700 last:border-0">
+            <span class="text-gray-500 text-sm w-5 text-center shrink-0">${i + 1}</span>
+            <span class="text-sm font-semibold flex-1">${playerName(p.id)}</span>
+            <span class="text-sm font-medium text-gray-300">${p.games} games</span>
+            <span class="text-xs text-gray-500 ml-1">${winRate}% win</span>
+          </div>`;
+        });
       }
 
+      // Biggest single session (all-time, unaffected by toggle)
       function sessionMeta(sessionId) {
         const s = state.sessions.find(s => s.id === sessionId);
         if (!s) return '';
@@ -1693,54 +1744,43 @@
         return `${s.name}${date ? ' · ' + date : ''}`;
       }
 
-      let singleBody = noData;
+      const noDataSingle = '<p class="text-gray-500 text-sm">Not enough data yet.</p>';
+      let singleHtml = noDataSingle;
       if (maxWin || maxLoss) {
-        singleBody = '<div class="space-y-3">';
-        if (maxWin) singleBody += `<div>
-          <p class="text-xs text-gray-500 mb-1">Biggest win</p>
-          <div class="flex justify-between items-center">
-            <div><p class="text-base font-semibold">${playerName(maxWin.player_id)}</p>
-            <p class="text-xs text-gray-500">${sessionMeta(maxWin.session_id)}</p></div>
-            <span class="text-green-400 text-lg font-bold">${formatINR(maxWin.net)}</span>
-          </div></div>`;
-        if (maxLoss) singleBody += `<div>
-          <p class="text-xs text-gray-500 mb-1">Biggest loss</p>
-          <div class="flex justify-between items-center">
-            <div><p class="text-base font-semibold">${playerName(maxLoss.player_id)}</p>
-            <p class="text-xs text-gray-500">${sessionMeta(maxLoss.session_id)}</p></div>
-            <span class="text-red-400 text-lg font-bold">${formatINR(maxLoss.net)}</span>
-          </div></div>`;
-        singleBody += '</div>';
-      }
-
-      let last10Body = noData;
-      if (last10.length) {
-        last10Body = '<div class="space-y-2">';
-        last10.forEach(session => {
-          const results = state.allSessionResults.filter(r => r.session_id === session.id);
-          const topWinner = results.length ? results.reduce((b, r) => r.net > b.net ? r : b, results[0]) : null;
-          const date = new Date(session.finalized_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-          last10Body += `<div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center gap-3">
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium truncate">${session.name}</p>
-              <p class="text-xs text-gray-500">${date}</p>
-            </div>
-            ${topWinner
-              ? `<div class="text-right shrink-0">
-                  <p class="text-xs text-gray-500">${playerName(topWinner.player_id)}</p>
-                  <p class="text-sm font-semibold text-green-400">${formatINR(topWinner.net)}</p>
-                </div>`
-              : '<p class="text-xs text-gray-500 shrink-0">No results</p>'}
-          </div>`;
-        });
-        last10Body += '</div>';
+        singleHtml = '<div class="space-y-3">';
+        if (maxWin) singleHtml += `<div class="flex justify-between items-center gap-3">
+          <div class="min-w-0">
+            <p class="text-xs text-gray-500 mb-0.5">Biggest win</p>
+            <p class="text-sm font-semibold">${playerName(maxWin.player_id)}</p>
+            <p class="text-xs text-gray-500">${sessionMeta(maxWin.session_id)}</p>
+          </div>
+          <span class="text-green-400 text-base font-bold shrink-0">${formatINR(maxWin.net)}</span>
+        </div>`;
+        if (maxLoss) singleHtml += `<div class="flex justify-between items-center gap-3">
+          <div class="min-w-0">
+            <p class="text-xs text-gray-500 mb-0.5">Biggest loss</p>
+            <p class="text-sm font-semibold">${playerName(maxLoss.player_id)}</p>
+            <p class="text-xs text-gray-500">${sessionMeta(maxLoss.session_id)}</p>
+          </div>
+          <span class="text-red-400 text-base font-bold shrink-0">${formatINR(maxLoss.net)}</span>
+        </div>`;
+        singleHtml += '</div>';
       }
 
       el.innerHTML = '<h1 class="text-2xl font-bold mb-4">Leaderboards</h1>'
-        + card('Last 7 days',  winnerLoserRows(w7, l7))
-        + card('Last 30 days', winnerLoserRows(w30, l30))
-        + card('Biggest single-session · all time', singleBody)
-        + card('Last 10 sessions', last10Body);
+        + toggleHtml
+        + `<div class="bg-gray-800 rounded-2xl px-4 pt-4 pb-1 mb-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Standings</p>
+            ${standingsHtml}
+          </div>`
+        + `<div class="bg-gray-800 rounded-2xl px-4 pt-4 pb-1 mb-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Most games played</p>
+            ${attendanceHtml}
+          </div>`
+        + `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">Biggest single session · all time</p>
+            ${singleHtml}
+          </div>`;
     }
 
     // ── renderAll: only re-render the visible viewer screen each tick ─────────
