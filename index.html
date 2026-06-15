@@ -1398,7 +1398,7 @@
 
     function buildLedgerText() {
       const sorted = [...state.players].sort((a, b) =>
-        (state.ledgerBalances[b.id] || 0) - (state.ledgerBalances[a.id] || 0)
+        (state.ledgerBalances[a.id] || 0) - (state.ledgerBalances[b.id] || 0)
       );
       const d = new Date();
       const dateStr = d.getDate() + ' ' + d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
@@ -1435,7 +1435,7 @@
       }
 
       const sorted = [...players].sort((a, b) =>
-        (state.ledgerBalances[b.id] || 0) - (state.ledgerBalances[a.id] || 0)
+        (state.ledgerBalances[a.id] || 0) - (state.ledgerBalances[b.id] || 0)
       );
       const total = sorted.reduce((s, p) => s + (state.ledgerBalances[p.id] || 0), 0);
 
