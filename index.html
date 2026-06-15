@@ -310,6 +310,10 @@
       editDraft: { amount: '', note: '' }, // live draft values while editing
       selectedEventType: 'buyin',  // current type button selection
       expenseOverrideDraft: {},    // { player_id: share } for no-profit expense override
+      // Chunk 5 viewer state
+      allSessionResults: [],       // every session_results row (all sessions)
+      settlements: [],             // every settlements row
+      activeSessionEvents: {},     // { sessionId: [events] } for each active session
     };
 
     // === ACCOUNTING ENGINE (chunk 2) ===
@@ -668,6 +672,12 @@
     async function getSessionResults(sessionId) {
       return dbQuery("getSessionResults", db =>
         db.from("session_results").select("*").eq("session_id", sessionId)
+      );
+    }
+
+    async function getAllSessionResults() {
+      return dbQuery("getAllSessionResults", db =>
+        db.from("session_results").select("*")
       );
     }
 
@@ -1366,18 +1376,328 @@
     window.undoEvent      = undoEvent;
 
     // === VIEWER UI (chunk 5) ===
-    // Stubs — filled in chunk 5.
 
-    function renderLedger()       { /* chunk 5 */ }
-    function renderLive()         { /* chunk 5 */ }
-    function renderHistory()      { /* chunk 5 */ }
-    function renderLeaderboards() { /* chunk 5 */ }
+    // ── SCREEN 1: Ledger ──────────────────────────────────────────────────────
+
+    function renderLedger() {
+      const el = document.getElementById('screen-ledger');
+      if (!el) return;
+
+      const players = state.players;
+      if (!players.length) {
+        el.innerHTML = '<h1 class="text-2xl font-bold mb-4">Ledger</h1><p class="text-gray-400">No balances yet.</p>';
+        return;
+      }
+
+      const sorted = [...players].sort((a, b) =>
+        (state.ledgerBalances[b.id] || 0) - (state.ledgerBalances[a.id] || 0)
+      );
+      const total = sorted.reduce((s, p) => s + (state.ledgerBalances[p.id] || 0), 0);
+
+      let html = '<h1 class="text-2xl font-bold mb-4">Ledger</h1><div class="space-y-2">';
+      sorted.forEach(p => {
+        const bal = state.ledgerBalances[p.id] || 0;
+        const col = bal > 0 ? 'text-green-400' : bal < 0 ? 'text-red-400' : 'text-gray-400';
+        html += `<div class="bg-gray-800 rounded-2xl px-4 py-4 flex justify-between items-center">
+          <span class="text-base font-medium">${p.name}</span>
+          <span class="text-lg font-semibold ${col}">${formatINR(bal)}</span>
+        </div>`;
+      });
+      html += '</div>';
+
+      const totalCol = total === 0 ? 'text-gray-400' : 'text-yellow-400';
+      html += `<div class="mt-4 pt-3 border-t border-gray-800 flex justify-between text-sm text-gray-500">
+        <span>Total</span><span class="${totalCol} font-medium">${formatINR(total)}</span>
+      </div>`;
+
+      el.innerHTML = html;
+    }
+
+    // ── SCREEN 2: Live ────────────────────────────────────────────────────────
+
+    function renderLive() {
+      const el = document.getElementById('screen-live');
+      if (!el) return;
+
+      const active = state.activeSessions;
+      if (!active.length) {
+        el.innerHTML = '<h1 class="text-2xl font-bold mb-4">Live</h1><p class="text-gray-400">No live sessions right now.</p>';
+        return;
+      }
+
+      let html = '<h1 class="text-2xl font-bold mb-4">Live</h1><div class="space-y-4">';
+      active.forEach(session => {
+        const events = state.activeSessionEvents[session.id] || [];
+        const playerIds = new Set();
+        events.forEach(e => { playerIds.add(e.player_id); if (e.counterparty_id) playerIds.add(e.counterparty_id); });
+        const roster = state.players.filter(p => playerIds.has(p.id));
+        const { perPlayer } = computeSessionResults(roster, events);
+        const { chipsIn, chipsOut, balanced, difference } = checkTableBalance(events);
+
+        html += `<div class="bg-gray-800 rounded-2xl p-4">
+          <div class="flex justify-between items-center mb-3">
+            <h2 class="text-base font-semibold">${session.name}</h2>
+            <span class="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full font-medium">live</span>
+          </div>`;
+
+        if (!roster.length) {
+          html += '<p class="text-gray-500 text-sm">No events yet.</p>';
+        } else {
+          html += `<div class="flex text-xs text-gray-500 mb-1 px-1">
+            <span class="flex-1">Player</span>
+            <span class="w-16 text-right">In</span>
+            <span class="w-16 text-right">Out</span>
+            <span class="w-16 text-right">Net</span>
+          </div><div class="space-y-1">`;
+          roster.forEach(p => {
+            const pp = perPlayer[p.id] || { net: 0 };
+            let pIn = 0, pOut = 0;
+            events.filter(e => !e.deleted_at).forEach(e => {
+              if (e.player_id === p.id) {
+                if (e.type === 'buyin' || e.type === 'rebuy') pIn  += e.amount;
+                if (e.type === 'cashout')                     pOut += e.amount;
+                if (e.type === 'transfer')                    pOut += e.amount;
+              }
+              if (e.counterparty_id === p.id && e.type === 'transfer') pIn += e.amount;
+            });
+            const col = pp.net > 0 ? 'text-green-400' : pp.net < 0 ? 'text-red-400' : 'text-gray-400';
+            html += `<div class="flex items-center text-sm px-1 py-0.5">
+              <span class="flex-1 font-medium truncate">${p.name}</span>
+              <span class="w-16 text-right text-gray-400">${formatINR(pIn)}</span>
+              <span class="w-16 text-right text-gray-400">${formatINR(pOut)}</span>
+              <span class="w-16 text-right ${col} font-semibold">${formatINR(pp.net)}</span>
+            </div>`;
+          });
+          html += '</div>';
+        }
+
+        const balCol = balanced ? 'text-green-400' : 'text-yellow-400';
+        html += `<div class="${balCol} text-xs mt-3">Chips in: ${formatINR(chipsIn)} · out: ${formatINR(chipsOut)}`;
+        if (!balanced) html += ` · ⚠ Δ${formatINR(difference)}`;
+        html += `</div></div>`;
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    }
+
+    // ── SCREEN 3: History ─────────────────────────────────────────────────────
+
+    function renderHistory() {
+      const el = document.getElementById('screen-history');
+      if (!el) return;
+
+      const finalized = [...state.sessions]
+        .filter(s => s.status === 'finalized')
+        .sort((a, b) => new Date(b.finalized_at) - new Date(a.finalized_at));
+
+      let html = '<h1 class="text-2xl font-bold mb-4">History</h1>';
+
+      if (!finalized.length) {
+        html += '<p class="text-gray-400">No finished sessions yet.</p>';
+        el.innerHTML = html;
+        return;
+      }
+
+      html += '<div class="space-y-4">';
+      finalized.forEach(session => {
+        const results = state.allSessionResults
+          .filter(r => r.session_id === session.id)
+          .sort((a, b) => b.net - a.net);
+        const date = new Date(session.finalized_at).toLocaleDateString('en-IN', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        });
+        html += `<div class="bg-gray-800 rounded-2xl p-4">
+          <div class="mb-3">
+            <p class="text-base font-semibold">${session.name}</p>
+            <p class="text-xs text-gray-500">${date}</p>
+          </div>`;
+        if (!results.length) {
+          html += '<p class="text-gray-500 text-sm">No results recorded.</p>';
+        } else {
+          html += '<div class="space-y-1">';
+          results.forEach(r => {
+            const col = r.net > 0 ? 'text-green-400' : r.net < 0 ? 'text-red-400' : 'text-gray-400';
+            html += `<div class="flex justify-between text-sm">
+              <span>${playerName(r.player_id)}</span>
+              <span class="${col} font-medium">${formatINR(r.net)}</span>
+            </div>`;
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+
+      if (state.settlements.length) {
+        html += '<h2 class="text-lg font-semibold mt-6 mb-3">Settlements</h2><div class="space-y-2">';
+        state.settlements.forEach(s => {
+          const date = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          html += `<div class="bg-gray-800 rounded-xl p-3 flex justify-between items-center">
+            <div>
+              <span class="text-sm font-medium">${playerName(s.payer_id)}</span>
+              <span class="text-xs text-gray-500 ml-2">${date}</span>
+            </div>
+            <span class="text-sm font-semibold text-green-400">${formatINR(s.amount)}</span>
+          </div>`;
+        });
+        html += '</div>';
+      }
+
+      el.innerHTML = html;
+    }
+
+    // ── SCREEN 4: Leaderboards — pure helpers ─────────────────────────────────
+
+    // Sum each player's net across finalized sessions whose finalized_at >= sinceMs.
+    function aggregateNetByPlayer(sessions, allSessionResults, sinceMs) {
+      const qualIds = new Set(
+        sessions
+          .filter(s => s.status === 'finalized' && new Date(s.finalized_at).getTime() >= sinceMs)
+          .map(s => s.id)
+      );
+      const totals = {};
+      allSessionResults.forEach(r => {
+        if (qualIds.has(r.session_id))
+          totals[r.player_id] = (totals[r.player_id] || 0) + r.net;
+      });
+      return totals;
+    }
+
+    // Returns { winner: {id, net}|null, loser: {id, net}|null }.
+    // Ties → first encountered entry.
+    function topAndBottom(netMap) {
+      const entries = Object.entries(netMap);
+      if (!entries.length) return { winner: null, loser: null };
+      let winner = entries[0], loser = entries[0];
+      entries.forEach(([id, net]) => {
+        if (net > winner[1]) winner = [id, net];
+        if (net < loser[1])  loser  = [id, net];
+      });
+      return {
+        winner: { id: winner[0], net: winner[1] },
+        loser:  { id: loser[0],  net: loser[1]  },
+      };
+    }
+
+    // Returns { maxWin: row|null, maxLoss: row|null } across all session_results rows.
+    function biggestSingle(allSessionResults) {
+      if (!allSessionResults.length) return { maxWin: null, maxLoss: null };
+      let maxWin = null, maxLoss = null;
+      allSessionResults.forEach(r => {
+        if (!maxWin  || r.net > maxWin.net)  maxWin  = r;
+        if (!maxLoss || r.net < maxLoss.net) maxLoss = r;
+      });
+      return { maxWin, maxLoss };
+    }
+
+    function renderLeaderboards() {
+      const el = document.getElementById('screen-leaderboards');
+      if (!el) return;
+
+      const now     = Date.now();
+      const ms7d    = now - 7  * 24 * 60 * 60 * 1000;
+      const ms30d   = now - 30 * 24 * 60 * 60 * 1000;
+
+      const net7    = aggregateNetByPlayer(state.sessions, state.allSessionResults, ms7d);
+      const net30   = aggregateNetByPlayer(state.sessions, state.allSessionResults, ms30d);
+      const { winner: w7,  loser: l7  } = topAndBottom(net7);
+      const { winner: w30, loser: l30 } = topAndBottom(net30);
+      const { maxWin, maxLoss } = biggestSingle(state.allSessionResults);
+
+      const last10 = [...state.sessions]
+        .filter(s => s.status === 'finalized')
+        .sort((a, b) => new Date(b.finalized_at) - new Date(a.finalized_at))
+        .slice(0, 10);
+
+      const noData = '<p class="text-gray-500 text-sm">Not enough data yet.</p>';
+
+      function card(title, body) {
+        return `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
+          <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">${title}</p>
+          ${body}
+        </div>`;
+      }
+
+      function winnerLoserRows(w, l) {
+        if (!w && !l) return noData;
+        let html = '<div class="space-y-2">';
+        if (w) html += `<div class="flex justify-between items-center">
+          <div><p class="text-xs text-gray-500">Winner</p><p class="text-base font-semibold">${playerName(w.id)}</p></div>
+          <span class="text-green-400 text-lg font-bold">${formatINR(w.net)}</span>
+        </div>`;
+        if (l) html += `<div class="flex justify-between items-center">
+          <div><p class="text-xs text-gray-500">Loser</p><p class="text-base font-semibold">${playerName(l.id)}</p></div>
+          <span class="text-red-400 text-lg font-bold">${formatINR(l.net)}</span>
+        </div>`;
+        html += '</div>';
+        return html;
+      }
+
+      function sessionMeta(sessionId) {
+        const s = state.sessions.find(s => s.id === sessionId);
+        if (!s) return '';
+        const date = s.finalized_at ? new Date(s.finalized_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        return `${s.name}${date ? ' · ' + date : ''}`;
+      }
+
+      let singleBody = noData;
+      if (maxWin || maxLoss) {
+        singleBody = '<div class="space-y-3">';
+        if (maxWin) singleBody += `<div>
+          <p class="text-xs text-gray-500 mb-1">Biggest win</p>
+          <div class="flex justify-between items-center">
+            <div><p class="text-base font-semibold">${playerName(maxWin.player_id)}</p>
+            <p class="text-xs text-gray-500">${sessionMeta(maxWin.session_id)}</p></div>
+            <span class="text-green-400 text-lg font-bold">${formatINR(maxWin.net)}</span>
+          </div></div>`;
+        if (maxLoss) singleBody += `<div>
+          <p class="text-xs text-gray-500 mb-1">Biggest loss</p>
+          <div class="flex justify-between items-center">
+            <div><p class="text-base font-semibold">${playerName(maxLoss.player_id)}</p>
+            <p class="text-xs text-gray-500">${sessionMeta(maxLoss.session_id)}</p></div>
+            <span class="text-red-400 text-lg font-bold">${formatINR(maxLoss.net)}</span>
+          </div></div>`;
+        singleBody += '</div>';
+      }
+
+      let last10Body = noData;
+      if (last10.length) {
+        last10Body = '<div class="space-y-2">';
+        last10.forEach(session => {
+          const results = state.allSessionResults.filter(r => r.session_id === session.id);
+          const topWinner = results.length ? results.reduce((b, r) => r.net > b.net ? r : b, results[0]) : null;
+          const date = new Date(session.finalized_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+          last10Body += `<div class="bg-gray-700 rounded-xl p-3 flex justify-between items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate">${session.name}</p>
+              <p class="text-xs text-gray-500">${date}</p>
+            </div>
+            ${topWinner
+              ? `<div class="text-right shrink-0">
+                  <p class="text-xs text-gray-500">${playerName(topWinner.player_id)}</p>
+                  <p class="text-sm font-semibold text-green-400">${formatINR(topWinner.net)}</p>
+                </div>`
+              : '<p class="text-xs text-gray-500 shrink-0">No results</p>'}
+          </div>`;
+        });
+        last10Body += '</div>';
+      }
+
+      el.innerHTML = '<h1 class="text-2xl font-bold mb-4">Leaderboards</h1>'
+        + card('Last 7 days',  winnerLoserRows(w7, l7))
+        + card('Last 30 days', winnerLoserRows(w30, l30))
+        + card('Biggest single-session · all time', singleBody)
+        + card('Last 10 sessions', last10Body);
+    }
+
+    // ── renderAll: only re-render the visible viewer screen each tick ─────────
 
     function renderAll() {
-      renderLedger();
-      renderLive();
-      renderHistory();
-      renderLeaderboards();
+      const screen = state.currentScreen;
+      if      (screen === 'ledger')       renderLedger();
+      else if (screen === 'live')         renderLive();
+      else if (screen === 'history')      renderHistory();
+      else if (screen === 'leaderboards') renderLeaderboards();
       renderAdminControls();
     }
 
@@ -1409,18 +1729,28 @@
       if (isRefreshing) return;
       isRefreshing = true;
       try {
-        const [players, sessions, balances] = await Promise.all([
+        const [players, sessions, balances, allResults, settlements] = await Promise.all([
           getPlayers(),
           getSessions(),
           getLedgerBalances(),
+          getAllSessionResults(),
+          getSettlements(),
         ]);
-        state.players        = players  || [];
-        state.sessions       = sessions || [];
-        state.activeSessions = (sessions || []).filter(s => s.status === "active");
-        state.ledgerBalances = {};
+        state.players           = players  || [];
+        state.sessions          = sessions || [];
+        state.activeSessions    = (sessions || []).filter(s => s.status === "active");
+        state.allSessionResults = allResults  || [];
+        state.settlements       = settlements || [];
+        state.ledgerBalances    = {};
         (balances || []).forEach(row => { state.ledgerBalances[row.player_id] = row.balance; });
 
-        // If a session is open, also refresh its events for log/totals (poll-safe).
+        // Fetch events for every active session (powers the public Live view).
+        const activeSessions = state.activeSessions;
+        const activeEvtArrays = await Promise.all(activeSessions.map(s => getSessionEvents(s.id)));
+        state.activeSessionEvents = {};
+        activeSessions.forEach((s, i) => { state.activeSessionEvents[s.id] = activeEvtArrays[i] || []; });
+
+        // If a session is open in admin, also refresh its events for log/totals (poll-safe).
         // Only union-add to roster — never remove in-memory picks.
         if (state.openSessionId) {
           const evts = await getSessionEvents(state.openSessionId);
@@ -1444,9 +1774,12 @@
     // ── DOMContentLoaded ─────────────────────────────────────────────────────
 
     document.addEventListener("DOMContentLoaded", () => {
-      // Nav tab switching
+      // Nav tab switching — render the new screen immediately (don't wait for next poll).
       document.querySelectorAll(".nav-btn").forEach(btn => {
-        btn.addEventListener("click", () => showScreen(btn.dataset.screen));
+        btn.addEventListener("click", () => {
+          showScreen(btn.dataset.screen);
+          renderAll();
+        });
       });
 
       // Engine self-test button
