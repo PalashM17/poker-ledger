@@ -243,16 +243,6 @@
           </div>
         </div>
 
-        <!-- TEMPORARY: engine self-test + sync indicator (remove in Chunk 6) -->
-        <div class="mt-6">
-          <button id="btn-run-tests"
-            class="w-full bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 rounded-xl py-3 text-base font-semibold transition-colors">
-            Run engine tests
-          </button>
-          <div id="test-results" class="mt-4 text-sm font-mono whitespace-pre-wrap bg-gray-800 rounded-xl p-4 hidden"></div>
-          <!-- TEMPORARY: polling status indicator (remove in Chunk 6) -->
-          <p id="sync-indicator" class="mt-3 text-xs text-gray-500 text-center"></p>
-        </div>
       </section>
 
     </main>
@@ -275,6 +265,9 @@
         <span class="text-lg">⚙️</span>Admin
       </button>
     </nav>
+
+    <!-- Toast container — fixed above bottom nav; never inside a re-rendered screen section -->
+    <div id="toast-container" class="fixed bottom-20 inset-x-0 max-w-[480px] mx-auto px-4 space-y-2 z-50 pointer-events-none"></div>
 
   </div><!-- /container -->
 
@@ -962,6 +955,7 @@
         document.getElementById('event-amount').value = '';
         document.getElementById('event-note').value   = '';
         await refreshSessionEvents();
+        showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' added', 'success');
       } catch (e) { showEventError('Save failed: ' + e.message); }
     }
 
@@ -1015,10 +1009,10 @@
         const counterparty = e.counterparty_id ? ` → ${playerName(e.counterparty_id)}` : '';
         const actions = isActive
           ? `<div class="flex gap-2 mt-2">
-              <button class="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5"
+              <button class="flex-1 bg-gray-700 hover:bg-gray-600 active:bg-gray-800 rounded-lg px-3 py-2.5 text-sm font-medium"
                 onclick="startEventEdit('${e.id}', ${e.amount}, ${JSON.stringify(e.note || '')})">Edit</button>
-              <button class="text-xs bg-red-900 hover:bg-red-800 rounded-lg px-3 py-1.5"
-                onclick="undoEvent('${e.id}')">Undo</button>
+              <button class="flex-1 bg-red-900 hover:bg-red-800 active:bg-red-950 rounded-lg px-3 py-2.5 text-sm font-semibold"
+                onclick="undoEvent('${e.id}')">↩ Undo</button>
             </div>` : '';
 
         return `<div class="bg-gray-800 rounded-xl p-3">
@@ -1072,6 +1066,7 @@
       try {
         await softDeleteSessionEvent(id);
         await refreshSessionEvents();
+        showToast('Event removed', 'info');
       } catch (e) { console.warn('[ADMIN] undoEvent failed:', e.message); }
     }
 
@@ -1169,6 +1164,7 @@
         renderSessionViewShell(session);
         renderSessionLog();
         renderSessionTotals();
+        showToast('Session closed', 'success');
       } catch (e) { console.warn('[ADMIN] confirmCloseSession failed:', e.message); }
     }
 
@@ -1191,7 +1187,7 @@
       } catch (e) { console.warn('[ADMIN] getSessionResults failed:', e.message); return; }
 
       const roster = rosterPlayers();
-      if (!roster.length) { alert('No players in session roster.'); return; }
+      if (!roster.length) { showToast('No players in session roster.', 'error'); return; }
 
       computeAndShowLedgerNets(roster);
     }
@@ -1286,6 +1282,7 @@
         await refreshData();
         const updated = state.sessions.find(s => s.id === state.openSessionId);
         renderSessionViewShell(updated);
+        showToast('Ledger updated', 'success');
       } catch (e) {
         errEl.textContent = 'Post failed: ' + e.message;
         errEl.classList.remove('hidden');
@@ -1362,6 +1359,7 @@
         document.getElementById('settlement-payer').value  = '';
         document.getElementById('settlement-preview-area').classList.add('hidden');
         updatePlayerSelects();
+        showToast('Settlement recorded', 'success');
       } catch (e) {
         showSettlementError('Settlement failed: ' + e.message);
         console.warn('[ADMIN] confirmSettlement failed:', e.message);
@@ -1376,6 +1374,51 @@
     window.undoEvent      = undoEvent;
 
     // === VIEWER UI (chunk 5) ===
+
+    // ── Toast notifications ───────────────────────────────────────────────────
+
+    function showToast(message, type) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const colors = { info: 'bg-gray-700 text-gray-100', success: 'bg-green-800 text-green-100', error: 'bg-red-800 text-red-100' };
+      const div = document.createElement('div');
+      div.className = (colors[type] || colors.info) + ' rounded-xl px-4 py-3 text-sm font-medium shadow-lg opacity-0 transition-opacity duration-300';
+      div.textContent = message;
+      container.appendChild(div);
+      requestAnimationFrame(() => div.classList.replace('opacity-0', 'opacity-100'));
+      setTimeout(() => {
+        div.classList.replace('opacity-100', 'opacity-0');
+        setTimeout(() => div.remove(), 300);
+      }, 2500);
+    }
+
+    // ── WhatsApp export ───────────────────────────────────────────────────────
+
+    function buildLedgerText() {
+      const sorted = [...state.players].sort((a, b) =>
+        (state.ledgerBalances[b.id] || 0) - (state.ledgerBalances[a.id] || 0)
+      );
+      const d = new Date();
+      const dateStr = d.getDate() + ' ' + d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
+      const lines = ['🃏 Poker Ledger · ' + dateStr, ''];
+      sorted.forEach(p => {
+        const bal = state.ledgerBalances[p.id] || 0;
+        lines.push(p.name + ': ' + (bal >= 0 ? '+' : '') + formatINR(bal));
+      });
+      const net = sorted.reduce((s, p) => s + (state.ledgerBalances[p.id] || 0), 0);
+      lines.push('', 'Net: ' + formatINR(net));
+      return lines.join('\n');
+    }
+
+    function copyLedgerToWhatsApp() {
+      navigator.clipboard.writeText(buildLedgerText())
+        .then(() => showToast('Copied to clipboard!', 'success'))
+        .catch(() => showToast('Copy failed — use Open in WhatsApp instead.', 'error'));
+    }
+
+    function openLedgerWhatsApp() {
+      window.open('https://wa.me/?text=' + encodeURIComponent(buildLedgerText()), '_blank');
+    }
 
     // ── SCREEN 1: Ledger ──────────────────────────────────────────────────────
 
@@ -1408,6 +1451,16 @@
       const totalCol = total === 0 ? 'text-gray-400' : 'text-yellow-400';
       html += `<div class="mt-4 pt-3 border-t border-gray-800 flex justify-between text-sm text-gray-500">
         <span>Total</span><span class="${totalCol} font-medium">${formatINR(total)}</span>
+      </div>`;
+      html += `<div class="mt-4 flex gap-2">
+        <button onclick="copyLedgerToWhatsApp()"
+          class="flex-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-900 rounded-xl py-3 text-sm font-medium transition-colors">
+          📋 Copy for WhatsApp
+        </button>
+        <button onclick="openLedgerWhatsApp()"
+          class="flex-1 bg-green-800 hover:bg-green-700 active:bg-green-900 rounded-xl py-3 text-sm font-medium transition-colors">
+          💬 Open in WhatsApp
+        </button>
       </div>`;
 
       el.innerHTML = html;
@@ -1758,11 +1811,6 @@
           unionRosterFromEvents(state.openSessionEvents);
         }
 
-        // TEMPORARY sync indicator (removed in Chunk 6)
-        const now = new Date().toLocaleTimeString();
-        const ind = document.getElementById("sync-indicator");
-        if (ind) ind.textContent = `Synced ${now} · ${state.players.length} player${state.players.length !== 1 ? "s" : ""}`;
-
         renderAll();
       } catch (e) {
         console.warn("[POLL] refreshData error:", e.message);
@@ -1780,18 +1828,6 @@
           showScreen(btn.dataset.screen);
           renderAll();
         });
-      });
-
-      // Engine self-test button
-      document.getElementById("btn-run-tests").addEventListener("click", () => {
-        const summary = runEngineTests();
-        const out = document.getElementById("test-results");
-        out.classList.remove("hidden");
-        const lines = summary.tests.map(t => (t.pass ? "✓ PASS" : "✗ FAIL") + "  " + t.name);
-        lines.push("");
-        lines.push(`${summary.passed}/${summary.total} passed, ${summary.failed} failed`);
-        out.textContent = lines.join("\n");
-        out.style.color = summary.failed === 0 ? "#4ade80" : "#f87171";
       });
 
       // Login button
