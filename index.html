@@ -95,7 +95,6 @@
               <!-- Type selector -->
               <div class="flex gap-1 mb-3 flex-wrap">
                 <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="buyin">Buy-in</button>
-                <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="rebuy">Rebuy</button>
                 <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="cashout">Cashout</button>
                 <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="transfer">Transfer</button>
                 <button class="evt-type-btn flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700" data-type="expense">Expense</button>
@@ -208,6 +207,9 @@
 
             <!-- A5: Live totals -->
             <div id="session-totals" class="bg-gray-800 rounded-xl p-4 text-sm mb-4"></div>
+
+            <!-- Expense split panel (active/closed sessions with expenses) -->
+            <div id="session-expense-panel" class="mb-4"></div>
           </div>
 
           <!-- ── B3: Standalone settlement (session-independent) ── -->
@@ -302,12 +304,16 @@
       editingEventId: null,        // UUID of event being inline-edited
       editDraft: { amount: '', note: '' }, // live draft values while editing
       selectedEventType: 'buyin',  // current type button selection
-      expenseOverrideDraft: {},    // { player_id: share } for no-profit expense override
+      expenseOverrideDraft: {},    // { player_id: share } for no-profit expense override (legacy ledger-preview flow)
+      expenseOverride: {},         // { [sessionId]: { [playerId]: amount } } — manual split from live panel
+      expenseEditOpen: false,      // whether the inline expense editor is open
+      expenseEditDraft: {},        // { [playerId]: amount } — live values while editing
       // Chunk 5 viewer state
       allSessionResults: [],       // every session_results row (all sessions)
       settlements: [],             // every settlements row
       activeSessionEvents: {},     // { sessionId: [events] } for each active session
       expenseEvents: [],           // all non-deleted expense rows across all sessions
+      finalizedSessionEvents: {},  // { [sessionId]: [events] } for finalized sessions with expenses
       leaderboardWindow: '30d',    // '7d' | '30d' | 'all' — persists across poll ticks
     };
 
@@ -684,6 +690,16 @@
       );
     }
 
+    async function getSessionEventsForSessions(sessionIds) {
+      if (!sessionIds || !sessionIds.length) return [];
+      return dbQuery("getSessionEventsForSessions", db =>
+        db.from("session_events").select("*")
+          .in("session_id", sessionIds)
+          .is("deleted_at", null)
+          .order("created_at")
+      );
+    }
+
     // ── Write helpers (authenticated only; RLS blocks anon writes) ────────────
 
     async function createPlayer(name) {
@@ -862,6 +878,8 @@
       state.editingEventId     = null;
       state.editDraft          = { amount: '', note: '' };
       state.selectedEventType  = 'buyin';
+      state.expenseEditOpen    = false;
+      state.expenseEditDraft   = {};
 
       document.getElementById('admin-session-list').classList.add('hidden');
       document.getElementById('admin-session-view').classList.remove('hidden');
@@ -876,6 +894,7 @@
           updatePlayerSelects();
           renderSessionLog();
           renderSessionTotals();
+          renderExpensePanel();
         }).catch(e => console.warn('[SESSION] load events failed:', e.message));
       }
     }
@@ -885,6 +904,8 @@
       state.openSessionEvents = [];
       state.openSessionRoster = new Set();
       state.editingEventId    = null;
+      state.expenseEditOpen   = false;
+      state.expenseEditDraft  = {};
       document.getElementById('admin-session-view').classList.add('hidden');
       document.getElementById('admin-session-list').classList.remove('hidden');
       renderAdminSessionList();
@@ -1124,7 +1145,186 @@
         updatePlayerSelects();
         renderSessionLog();
         renderSessionTotals();
+        renderExpensePanel();
       } catch (e) { console.warn('[ADMIN] refreshSessionEvents failed:', e.message); }
+    }
+
+    // ── Live expense panel (active / closed sessions with expenses) ───────────
+
+    function renderExpensePanel() {
+      const div = document.getElementById('session-expense-panel');
+      if (!div) return;
+
+      const session = state.sessions.find(s => s.id === state.openSessionId);
+      if (!session || session.status === 'finalized') { div.innerHTML = ''; return; }
+
+      const events = state.openSessionEvents;
+      const hasExpenses = events.some(e => !e.deleted_at && e.type === 'expense');
+      if (!hasExpenses) { div.innerHTML = ''; return; }
+
+      const roster = rosterPlayers();
+      const override = state.expenseOverride[state.openSessionId];
+      const { perPlayer, totalExpense } = computeSessionResults(roster, events, override);
+
+      const fronters = events.filter(e => !e.deleted_at && e.type === 'expense');
+
+      let html = `<div class="bg-gray-800 rounded-xl p-4 text-sm">`;
+      html += `<p class="text-sm font-medium text-gray-300 mb-2">Expense split if you close now</p>`;
+
+      // Total + fronter lines
+      html += `<p class="text-xs text-gray-500 mb-1">Total: ${formatINR(totalExpense)} · paid up front by:</p>`;
+      html += `<div class="space-y-0.5 mb-3">`;
+      fronters.forEach(e => {
+        const note = e.note ? ` (${e.note})` : '';
+        html += `<div class="flex justify-between text-xs text-gray-400">
+          <span>${playerName(e.player_id)}${note}</span>
+          <span>${formatINR(e.amount)}</span>
+        </div>`;
+      });
+      html += `</div>`;
+
+      // Per-winner bears (no "bears nothing" line)
+      const bearers = roster.filter(p => (perPlayer[p.id] || {}).expenseShare > 0);
+      if (bearers.length) {
+        html += `<p class="text-xs text-gray-500 mb-1">Borne by:</p><div class="space-y-0.5 mb-3">`;
+        bearers.forEach(p => {
+          const pp = perPlayer[p.id];
+          const share = pp.expenseShare;
+          const gross = pp.gross;
+          const pctStr = gross > 0 ? ` · ${Math.round(share / gross * 100)}% of their ${formatINR(gross)} profit` : '';
+          html += `<div class="text-xs text-gray-300">${p.name} bears ${formatINR(share)}${pctStr}</div>`;
+        });
+        html += `</div>`;
+      }
+
+      if (override) {
+        html += `<p class="text-xs text-yellow-400 mb-2">⚠ Manual override active</p>`;
+      }
+
+      // Edit split toggle
+      if (!state.expenseEditOpen) {
+        html += `<button onclick="toggleExpenseEdit()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Edit split</button>`;
+      } else {
+        // Inline editor — values from expenseEditDraft (poll-safe)
+        html += `<div class="border-t border-gray-700 pt-3 mt-1">`;
+        html += `<p class="text-xs text-gray-400 mb-2">Manual split (must sum to ${formatINR(totalExpense)}):</p>`;
+        html += `<div class="space-y-2 mb-2" id="expense-edit-inputs">`;
+        roster.forEach(p => {
+          const cur = state.expenseEditDraft[p.id] !== undefined
+            ? state.expenseEditDraft[p.id]
+            : (perPlayer[p.id] || {}).expenseShare || 0;
+          html += `<div class="flex items-center gap-2">
+            <span class="text-xs flex-1">${p.name}</span>
+            <input type="number" inputmode="numeric" id="expense-edit-${p.id}"
+              value="${cur}"
+              oninput="onExpenseEditInput('${p.id}', this.value)"
+              class="w-20 rounded-lg bg-gray-700 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>`;
+        });
+        html += `</div>`;
+
+        // Live sum — computed from draft
+        const editSum = roster.reduce((s, p) =>
+          s + (state.expenseEditDraft[p.id] !== undefined ? state.expenseEditDraft[p.id] : (perPlayer[p.id] || {}).expenseShare || 0), 0);
+        const diff = editSum - totalExpense;
+        const allClean = roster.every(p => {
+          const v = state.expenseEditDraft[p.id] !== undefined ? state.expenseEditDraft[p.id] : (perPlayer[p.id] || {}).expenseShare || 0;
+          return Number.isInteger(v) && v >= 0 && v % 10 === 0;
+        });
+        const canApply = diff === 0 && allClean;
+
+        html += `<p id="expense-edit-sum" class="text-xs mb-1 ${diff === 0 ? 'text-green-400' : 'text-red-400'}">`;
+        html += `Sum: ${formatINR(editSum)} · target: ${formatINR(totalExpense)}`;
+        if (diff !== 0) html += ` (${diff > 0 ? '+' : ''}${formatINR(Math.abs(diff))})`;
+        html += `</p>`;
+        html += `<p id="expense-edit-clean-warn" class="text-xs text-yellow-400 mb-2 ${allClean ? 'hidden' : ''}">All values must be multiples of ₹10 and ≥ 0.</p>`;
+
+        html += `<div class="flex gap-2 mt-2">`;
+        html += `<button id="btn-expense-apply" onclick="applyExpenseOverride()" ${canApply ? '' : 'disabled'}
+          class="flex-1 rounded-lg py-2 text-xs font-medium ${canApply ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-700 opacity-50 cursor-not-allowed'}">Apply</button>`;
+        html += `<button onclick="resetExpenseOverride()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-xs font-medium">Reset to auto</button>`;
+        html += `<button onclick="toggleExpenseEdit()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-xs font-medium">Cancel</button>`;
+        html += `</div></div>`;
+      }
+
+      html += `</div>`;
+      div.innerHTML = html;
+    }
+
+    function toggleExpenseEdit() {
+      if (!state.expenseEditOpen) {
+        // Initialize draft from current computed shares (including any active override)
+        const roster = rosterPlayers();
+        const override = state.expenseOverride[state.openSessionId];
+        const { perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
+        state.expenseEditDraft = {};
+        roster.forEach(p => { state.expenseEditDraft[p.id] = (perPlayer[p.id] || {}).expenseShare || 0; });
+        state.expenseEditOpen = true;
+      } else {
+        state.expenseEditOpen = false;
+        state.expenseEditDraft = {};
+      }
+      renderExpensePanel();
+    }
+
+    function onExpenseEditInput(playerId, value) {
+      state.expenseEditDraft[playerId] = parseInt(value, 10) || 0;
+      // Update sum/validation display without full re-render (preserves focus)
+      const roster = rosterPlayers();
+      const override = state.expenseOverride[state.openSessionId];
+      const { totalExpense, perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
+
+      const editSum = roster.reduce((s, p) =>
+        s + (state.expenseEditDraft[p.id] !== undefined ? state.expenseEditDraft[p.id] : (perPlayer[p.id] || {}).expenseShare || 0), 0);
+      const diff = editSum - totalExpense;
+      const allClean = roster.every(p => {
+        const v = state.expenseEditDraft[p.id] !== undefined ? state.expenseEditDraft[p.id] : (perPlayer[p.id] || {}).expenseShare || 0;
+        return Number.isInteger(v) && v >= 0 && v % 10 === 0;
+      });
+      const canApply = diff === 0 && allClean;
+
+      const sumEl = document.getElementById('expense-edit-sum');
+      if (sumEl) {
+        sumEl.className = `text-xs mb-1 ${diff === 0 ? 'text-green-400' : 'text-red-400'}`;
+        let txt = `Sum: ${formatINR(editSum)} · target: ${formatINR(totalExpense)}`;
+        if (diff !== 0) txt += ` (${diff > 0 ? '+' : ''}${formatINR(Math.abs(diff))})`;
+        sumEl.textContent = txt;
+      }
+      const warnEl = document.getElementById('expense-edit-clean-warn');
+      if (warnEl) warnEl.classList.toggle('hidden', allClean);
+      const applyBtn = document.getElementById('btn-expense-apply');
+      if (applyBtn) {
+        applyBtn.disabled = !canApply;
+        applyBtn.className = `flex-1 rounded-lg py-2 text-xs font-medium ${canApply ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-700 opacity-50 cursor-not-allowed'}`;
+      }
+    }
+
+    function applyExpenseOverride() {
+      const roster = rosterPlayers();
+      // Read fresh values from DOM inputs before storing
+      roster.forEach(p => {
+        const inp = document.getElementById(`expense-edit-${p.id}`);
+        if (inp) state.expenseEditDraft[p.id] = parseInt(inp.value, 10) || 0;
+      });
+      const override = state.expenseOverride[state.openSessionId];
+      const { totalExpense } = computeSessionResults(roster, state.openSessionEvents, override);
+      const editSum = roster.reduce((s, p) => s + (state.expenseEditDraft[p.id] || 0), 0);
+      const allClean = roster.every(p => {
+        const v = state.expenseEditDraft[p.id] || 0;
+        return Number.isInteger(v) && v >= 0 && v % 10 === 0;
+      });
+      if (!allClean || editSum !== totalExpense) return; // button disabled, but guard anyway
+      state.expenseOverride[state.openSessionId] = { ...state.expenseEditDraft };
+      state.expenseEditOpen = false;
+      state.expenseEditDraft = {};
+      renderExpensePanel();
+    }
+
+    function resetExpenseOverride() {
+      delete state.expenseOverride[state.openSessionId];
+      state.expenseEditOpen = false;
+      state.expenseEditDraft = {};
+      renderExpensePanel();
     }
 
     // ── renderAdminControls: called by renderAll() on every poll tick ─────────
@@ -1143,6 +1343,7 @@
         }
         renderSessionLog();
         renderSessionTotals();
+        renderExpensePanel();
       }
     }
 
@@ -1199,7 +1400,7 @@
       const roster = rosterPlayers();
       if (!roster.length) { showToast('No players in session roster.', 'error'); return; }
 
-      computeAndShowLedgerNets(roster);
+      computeAndShowLedgerNets(roster, state.expenseOverride[state.openSessionId]);
     }
 
     function computeAndShowLedgerNets(roster, override) {
@@ -1241,12 +1442,13 @@
 
     function recalculateLedgerPreview() {
       const roster = rosterPlayers();
-      // Read current input values into draft
+      // Read current input values into draft and store as the session override
       roster.forEach(p => {
         const inp = document.getElementById('override-' + p.id);
         if (inp) state.expenseOverrideDraft[p.id] = parseInt(inp.value, 10) || 0;
       });
-      computeAndShowLedgerNets(roster, state.expenseOverrideDraft);
+      state.expenseOverride[state.openSessionId] = { ...state.expenseOverrideDraft };
+      computeAndShowLedgerNets(roster, state.expenseOverride[state.openSessionId]);
     }
 
     async function confirmUpdateLedger() {
@@ -1268,10 +1470,27 @@
       }
 
       const roster = rosterPlayers();
-      // Determine whether to use override
-      const { needsExpenseOverride } = computeSessionResults(roster, state.openSessionEvents);
-      const override = needsExpenseOverride && Object.keys(state.expenseOverrideDraft).length
-        ? state.expenseOverrideDraft : undefined;
+
+      // Resolve the override that will actually be used at posting
+      const sessionOverride = state.expenseOverride[state.openSessionId];
+      const { needsExpenseOverride, totalExpense } = computeSessionResults(roster, state.openSessionEvents);
+      const override = sessionOverride ||
+        (needsExpenseOverride && Object.keys(state.expenseOverrideDraft).length ? state.expenseOverrideDraft : undefined);
+
+      // Validate the RESOLVED override before any write
+      if (override && totalExpense > 0) {
+        const overrideSum = roster.reduce((s, p) => s + (override[p.id] || 0), 0);
+        const allClean = roster.every(p => {
+          const v = override[p.id] || 0;
+          return Number.isInteger(v) && v >= 0 && v % 10 === 0;
+        });
+        if (!allClean || overrideSum !== totalExpense) {
+          errEl.textContent = `Override values must be ₹10-clean and sum exactly to ${formatINR(totalExpense)}.`;
+          errEl.classList.remove('hidden');
+          return;
+        }
+      }
+
       const { perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
 
       try {
@@ -1378,11 +1597,15 @@
 
     // Expose functions used from onclick attributes in dynamic HTML
     window.setLeaderboardWindow = setLeaderboardWindow;
-    window.openSession    = openSession;
-    window.startEventEdit = startEventEdit;
-    window.saveEventEdit  = saveEventEdit;
-    window.cancelEventEdit = cancelEventEdit;
-    window.undoEvent      = undoEvent;
+    window.openSession       = openSession;
+    window.startEventEdit    = startEventEdit;
+    window.saveEventEdit     = saveEventEdit;
+    window.cancelEventEdit   = cancelEventEdit;
+    window.undoEvent         = undoEvent;
+    window.toggleExpenseEdit  = toggleExpenseEdit;
+    window.onExpenseEditInput = onExpenseEditInput;
+    window.applyExpenseOverride = applyExpenseOverride;
+    window.resetExpenseOverride = resetExpenseOverride;
 
     // === VIEWER UI (chunk 5) ===
 
@@ -1591,8 +1814,10 @@
         const sessionExpenses = (state.expenseEvents || []).filter(e => e.session_id === session.id);
         if (sessionExpenses.length) {
           html += '<div class="mt-3 pt-3 border-t border-gray-700">';
-          html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Expenses</p>';
-          html += '<div class="space-y-1">';
+
+          // Fronter list
+          html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Paid up front (reimbursed)</p>';
+          html += '<div class="space-y-1 mb-3">';
           sessionExpenses.forEach(e => {
             const note = e.note ? `<span class="text-gray-500 ml-1">· ${e.note}</span>` : '';
             html += `<div class="flex justify-between text-xs text-gray-400">
@@ -1600,7 +1825,42 @@
               <span>${formatINR(e.amount)}</span>
             </div>`;
           });
-          html += '</div></div>';
+          html += '</div>';
+
+          // Borne-by list: gross + reimbursement − storedNet (override-proof — uses stored nets)
+          const sessionEvts = state.finalizedSessionEvents[session.id] || [];
+          if (sessionEvts.length) {
+            const sessionPlayerIds = new Set();
+            sessionEvts.forEach(e => { sessionPlayerIds.add(e.player_id); if (e.counterparty_id) sessionPlayerIds.add(e.counterparty_id); });
+            const sessionPlayers = state.players.filter(p => sessionPlayerIds.has(p.id));
+            const { perPlayer } = computeSessionResults(sessionPlayers, sessionEvts);
+            const storedNets = {};
+            state.allSessionResults.filter(r => r.session_id === session.id).forEach(r => { storedNets[r.player_id] = r.net; });
+
+            const borneList = sessionPlayers
+              .map(p => {
+                const pp = perPlayer[p.id] || { gross: 0, reimbursement: 0 };
+                const borne = pp.gross + pp.reimbursement - (storedNets[p.id] || 0);
+                return { p, borne, gross: pp.gross };
+              })
+              .filter(x => x.borne > 0)
+              .sort((a, b) => b.borne - a.borne);
+
+            if (borneList.length) {
+              html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Borne by winners (at settlement)</p>';
+              html += '<div class="space-y-1">';
+              borneList.forEach(({ p, borne, gross }) => {
+                const pctStr = gross > 0 ? ` · ${Math.round(borne / gross * 100)}% of profit` : '';
+                html += `<div class="flex justify-between text-xs text-gray-400">
+                  <span>${p.name}${pctStr}</span>
+                  <span>${formatINR(borne)}</span>
+                </div>`;
+              });
+              html += '</div>';
+            }
+          }
+
+          html += '</div>';
         }
         html += '</div>';
       });
@@ -1867,6 +2127,22 @@
         const activeEvtArrays = await Promise.all(activeSessions.map(s => getSessionEvents(s.id)));
         state.activeSessionEvents = {};
         activeSessions.forEach((s, i) => { state.activeSessionEvents[s.id] = activeEvtArrays[i] || []; });
+
+        // Fetch full events for finalized sessions that have expenses (powers History borne-by section).
+        const finalizedWithExpenses = (sessions || []).filter(s =>
+          s.status === 'finalized' && (expenseEvents || []).some(e => e.session_id === s.id)
+        );
+        if (finalizedWithExpenses.length) {
+          const ids = finalizedWithExpenses.map(s => s.id);
+          const allFinalizedEvts = await getSessionEventsForSessions(ids);
+          state.finalizedSessionEvents = {};
+          (allFinalizedEvts || []).forEach(e => {
+            if (!state.finalizedSessionEvents[e.session_id]) state.finalizedSessionEvents[e.session_id] = [];
+            state.finalizedSessionEvents[e.session_id].push(e);
+          });
+        } else {
+          state.finalizedSessionEvents = {};
+        }
 
         // If a session is open in admin, also refresh its events for log/totals (poll-safe).
         // Only union-add to roster — never remove in-memory picks.
