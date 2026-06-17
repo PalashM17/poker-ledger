@@ -181,15 +181,6 @@
                 <div id="update-ledger-preview" class="hidden bg-gray-800 rounded-xl p-4 mt-2">
                   <p class="text-sm font-medium mb-2 text-gray-300">Session nets for review:</p>
                   <div id="ledger-nets-table" class="text-sm space-y-1 mb-3"></div>
-                  <!-- Expense no-profit override -->
-                  <div id="expense-override-area" class="hidden mb-3 bg-gray-700 rounded-xl p-3">
-                    <p class="text-xs text-yellow-400 mb-2 font-medium">⚠ No profitable players — manual expense split required. Default is equal split.</p>
-                    <div id="expense-override-inputs" class="space-y-2 mb-2"></div>
-                    <button id="btn-recalculate-ledger"
-                      class="bg-gray-600 hover:bg-gray-500 rounded-xl px-4 py-2 text-sm font-medium">
-                      Recalculate
-                    </button>
-                  </div>
                   <p id="ledger-preview-error" class="text-red-400 text-sm mb-2 hidden"></p>
                   <div class="flex gap-2">
                     <button id="btn-ledger-confirm-yes" class="flex-1 bg-green-700 hover:bg-green-600 rounded-xl py-2.5 text-sm font-semibold">Confirm Post</button>
@@ -304,7 +295,7 @@
       editingEventId: null,        // UUID of event being inline-edited
       editDraft: { amount: '', note: '' }, // live draft values while editing
       selectedEventType: 'buyin',  // current type button selection
-      expenseOverrideDraft: {},    // { player_id: share } for no-profit expense override (legacy ledger-preview flow)
+      expenseOverrideDraft: {},    // unused legacy — kept for confirmUpdateLedger reference only
       expenseOverride: {},         // { [sessionId]: { [playerId]: amount } } — manual split from live panel
       expenseEditOpen: false,      // whether the inline expense editor is open
       expenseEditDraft: {},        // { [playerId]: amount } — live values while editing
@@ -315,6 +306,9 @@
       expenseEvents: [],           // all non-deleted expense rows across all sessions
       finalizedSessionEvents: {},  // { [sessionId]: [events] } for finalized sessions with expenses
       leaderboardWindow: '30d',    // '7d' | '30d' | 'all' — persists across poll ticks
+      historyView: 'sessions',     // 'sessions' | 'settlements' — persists across poll ticks
+      settlementEditOpen: false,   // whether the settlement recipient editor is open
+      settlementEditDraft: {},     // { [playerId]: amount } — live values while editing recipients
     };
 
     // === ACCOUNTING ENGINE (chunk 2) ===
@@ -1164,12 +1158,15 @@
 
       const roster = rosterPlayers();
       const override = state.expenseOverride[state.openSessionId];
-      const { perPlayer, totalExpense } = computeSessionResults(roster, events, override);
+      const { perPlayer, totalExpense, needsExpenseOverride } = computeSessionResults(roster, events, override);
 
       const fronters = events.filter(e => !e.deleted_at && e.type === 'expense');
 
       let html = `<div class="bg-gray-800 rounded-xl p-4 text-sm">`;
       html += `<p class="text-sm font-medium text-gray-300 mb-2">Expense split if you close now</p>`;
+      if (needsExpenseOverride && !override) {
+        html += `<p class="text-xs text-yellow-400 mb-2">⚠ No profitable players — set the split manually before posting.</p>`;
+      }
 
       // Total + fronter lines
       html += `<p class="text-xs text-gray-500 mb-1">Total: ${formatINR(totalExpense)} · paid up front by:</p>`;
@@ -1404,11 +1401,9 @@
     }
 
     function computeAndShowLedgerNets(roster, override) {
-      const { perPlayer, needsExpenseOverride, suggestedEqualSplit } =
-        computeSessionResults(roster, state.openSessionEvents, override);
+      const { perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
 
-      const netsTable   = document.getElementById('ledger-nets-table');
-      const overrideArea = document.getElementById('expense-override-area');
+      const netsTable = document.getElementById('ledger-nets-table');
 
       netsTable.innerHTML = roster.map(p => {
         const pp  = perPlayer[p.id] || { net: 0 };
@@ -1419,36 +1414,8 @@
         </div>`;
       }).join('');
 
-      if (needsExpenseOverride && !override) {
-        // Show override UI; default to suggestedEqualSplit
-        state.expenseOverrideDraft = { ...suggestedEqualSplit };
-        overrideArea.classList.remove('hidden');
-        document.getElementById('expense-override-inputs').innerHTML = roster.map(p =>
-          `<div class="flex items-center gap-2">
-            <span class="text-sm flex-1">${p.name}</span>
-            <input type="number" inputmode="numeric" id="override-${p.id}"
-              value="${suggestedEqualSplit[p.id] || 0}"
-              oninput="state.expenseOverrideDraft['${p.id}']=parseInt(this.value)||0"
-              class="w-24 rounded-lg bg-gray-600 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-          </div>`
-        ).join('');
-      } else {
-        overrideArea.classList.add('hidden');
-      }
-
       document.getElementById('update-ledger-preview').classList.remove('hidden');
       document.getElementById('btn-show-update-ledger').classList.add('hidden');
-    }
-
-    function recalculateLedgerPreview() {
-      const roster = rosterPlayers();
-      // Read current input values into draft and store as the session override
-      roster.forEach(p => {
-        const inp = document.getElementById('override-' + p.id);
-        if (inp) state.expenseOverrideDraft[p.id] = parseInt(inp.value, 10) || 0;
-      });
-      state.expenseOverride[state.openSessionId] = { ...state.expenseOverrideDraft };
-      computeAndShowLedgerNets(roster, state.expenseOverride[state.openSessionId]);
     }
 
     async function confirmUpdateLedger() {
@@ -1474,8 +1441,15 @@
       // Resolve the override that will actually be used at posting
       const sessionOverride = state.expenseOverride[state.openSessionId];
       const { needsExpenseOverride, totalExpense } = computeSessionResults(roster, state.openSessionEvents);
-      const override = sessionOverride ||
-        (needsExpenseOverride && Object.keys(state.expenseOverrideDraft).length ? state.expenseOverrideDraft : undefined);
+
+      // Guard: no-winners session with expense must have a panel override set first
+      if (totalExpense > 0 && needsExpenseOverride && !sessionOverride) {
+        errEl.textContent = 'No profitable players — set the expense split in the session panel before posting.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const override = sessionOverride;
 
       // Validate the RESOLVED override before any write
       if (override && totalExpense > 0) {
@@ -1542,24 +1516,180 @@
 
       const result = distributeSettlement(balances, payerId, amount);
       settlementDraft = { payer_id: payerId, amount, ...result };
+      state.settlementEditOpen = false;
+      state.settlementEditDraft = {};
 
-      const tbl     = document.getElementById('settlement-distribution-table');
-      const entries = Object.entries(result.received);
-      if (!entries.length) {
-        tbl.innerHTML = '<p class="text-gray-400 text-xs">No positive balances — payer will hold the full amount as credit.</p>';
-      } else {
-        tbl.innerHTML = entries.map(([pid, rcv]) =>
-          `<div class="flex justify-between">
-            <span>${playerName(pid)}</span>
-            <span class="text-green-400 font-medium">receives ${formatINR(rcv)}</span>
-          </div>`
-        ).join('');
-      }
-      if (result.leftover > 0) {
-        tbl.innerHTML += `<p class="text-yellow-400 text-xs mt-1">Overpay: ${formatINR(result.leftover)} held as ${playerName(payerId)}'s credit.</p>`;
-      }
-
+      renderSettlementDistributionTable();
       document.getElementById('settlement-preview-area').classList.remove('hidden');
+    }
+
+    function renderSettlementDistributionTable() {
+      const tbl = document.getElementById('settlement-distribution-table');
+      if (!tbl || !settlementDraft) return;
+      const { payer_id, amount, received, leftover } = settlementDraft;
+
+      if (!state.settlementEditOpen) {
+        const entries = Object.entries(received);
+        let html = '';
+        if (!entries.length) {
+          html = '<p class="text-gray-400 text-xs">No positive balances — payer will hold the full amount as credit.</p>';
+        } else {
+          html = entries.map(([pid, rcv]) =>
+            `<div class="flex justify-between">
+              <span>${playerName(pid)}</span>
+              <span class="text-green-400 font-medium">receives ${formatINR(rcv)}</span>
+            </div>`
+          ).join('');
+        }
+        if (leftover > 0) {
+          html += `<p class="text-yellow-400 text-xs mt-1">Overpay: ${formatINR(leftover)} held as ${playerName(payer_id)}'s credit.</p>`;
+        }
+        html += `<button onclick="toggleSettlementEdit()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium mt-2">Edit recipients</button>`;
+        tbl.innerHTML = html;
+      } else {
+        // Inline edit mode — all players with current positive ledger balance (excluding payer)
+        const allRecipients = Object.entries(state.ledgerBalances)
+          .map(([pid, bal]) => [pid, Number(bal)])
+          .filter(([pid, bal]) => pid !== payer_id && bal > 0);
+
+        let html = '<div class="space-y-2 mb-2" id="settlement-edit-inputs">';
+        allRecipients.forEach(([pid, bal]) => {
+          const cur = state.settlementEditDraft[pid] !== undefined ? state.settlementEditDraft[pid] : (received[pid] || 0);
+          html += `<div class="flex items-center gap-2">
+            <span class="text-xs flex-1">${playerName(pid)} <span class="text-gray-500">(owed ${formatINR(bal)})</span></span>
+            <input type="number" inputmode="numeric" id="settlement-edit-${pid}"
+              value="${cur}"
+              oninput="onSettlementEditInput('${pid}', this.value)"
+              class="w-20 rounded-lg bg-gray-600 px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>`;
+        });
+        html += '</div>';
+
+        const editSum = allRecipients.reduce((s, [pid]) => {
+          const v = state.settlementEditDraft[pid] !== undefined ? state.settlementEditDraft[pid] : (received[pid] || 0);
+          return s + v;
+        }, 0);
+        const rem = amount - editSum;
+        const allValid = allRecipients.every(([pid, bal]) => {
+          const v = state.settlementEditDraft[pid] !== undefined ? state.settlementEditDraft[pid] : (received[pid] || 0);
+          const maxAllowed = Math.floor(bal / 10) * 10;
+          return Number.isInteger(v) && v >= 0 && v % 10 === 0 && v <= maxAllowed;
+        });
+        const canApply = allValid && editSum <= amount;
+
+        html += `<p id="settlement-edit-sum" class="text-xs mb-1 ${canApply ? 'text-green-400' : 'text-red-400'}">`;
+        html += `Sum: ${formatINR(editSum)} of ${formatINR(amount)}`;
+        if (rem > 0) html += ` · ${formatINR(rem)} stays as ${playerName(payer_id)}'s credit`;
+        html += `</p>`;
+        html += `<p id="settlement-edit-warn" class="text-xs text-yellow-400 mb-2 ${allValid ? 'hidden' : ''}">Values must be ₹10-clean, ≥ 0, and ≤ recipient's owed balance.</p>`;
+
+        html += `<div class="flex gap-2 mt-2">
+          <button id="btn-settlement-apply" onclick="applySettlementRecipients()" ${canApply ? '' : 'disabled'}
+            class="flex-1 rounded-lg py-2 text-xs font-medium ${canApply ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-700 opacity-50 cursor-not-allowed'}">Apply</button>
+          <button onclick="resetSettlementRecipients()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-xs font-medium">Reset</button>
+          <button onclick="toggleSettlementEdit()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-xs font-medium">Cancel</button>
+        </div>`;
+
+        tbl.innerHTML = html;
+      }
+    }
+
+    function toggleSettlementEdit() {
+      if (!state.settlementEditOpen) {
+        const { payer_id, received } = settlementDraft;
+        state.settlementEditDraft = {};
+        Object.entries(state.ledgerBalances)
+          .filter(([pid, bal]) => pid !== payer_id && Number(bal) > 0)
+          .forEach(([pid]) => { state.settlementEditDraft[pid] = received[pid] || 0; });
+        state.settlementEditOpen = true;
+      } else {
+        state.settlementEditOpen = false;
+        state.settlementEditDraft = {};
+      }
+      renderSettlementDistributionTable();
+    }
+
+    function onSettlementEditInput(pid, value) {
+      state.settlementEditDraft[pid] = parseInt(value, 10) || 0;
+      const { payer_id, amount, received } = settlementDraft;
+      const allRecipients = Object.entries(state.ledgerBalances)
+        .map(([p, b]) => [p, Number(b)])
+        .filter(([p, b]) => p !== payer_id && b > 0);
+
+      const editSum = allRecipients.reduce((s, [p]) => {
+        const v = state.settlementEditDraft[p] !== undefined ? state.settlementEditDraft[p] : (received[p] || 0);
+        return s + v;
+      }, 0);
+      const allValid = allRecipients.every(([p, bal]) => {
+        const v = state.settlementEditDraft[p] !== undefined ? state.settlementEditDraft[p] : (received[p] || 0);
+        const maxAllowed = Math.floor(bal / 10) * 10;
+        return Number.isInteger(v) && v >= 0 && v % 10 === 0 && v <= maxAllowed;
+      });
+      const canApply = allValid && editSum <= amount;
+      const rem = amount - editSum;
+
+      const sumEl = document.getElementById('settlement-edit-sum');
+      if (sumEl) {
+        sumEl.className = `text-xs mb-1 ${canApply ? 'text-green-400' : 'text-red-400'}`;
+        let txt = `Sum: ${formatINR(editSum)} of ${formatINR(amount)}`;
+        if (rem > 0) txt += ` · ${formatINR(rem)} stays as ${playerName(payer_id)}'s credit`;
+        sumEl.textContent = txt;
+      }
+      const warnEl = document.getElementById('settlement-edit-warn');
+      if (warnEl) warnEl.classList.toggle('hidden', allValid);
+      const applyBtn = document.getElementById('btn-settlement-apply');
+      if (applyBtn) {
+        applyBtn.disabled = !canApply;
+        applyBtn.className = `flex-1 rounded-lg py-2 text-xs font-medium ${canApply ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-700 opacity-50 cursor-not-allowed'}`;
+      }
+    }
+
+    function applySettlementRecipients() {
+      const { payer_id, amount } = settlementDraft;
+      const allRecipients = Object.entries(state.ledgerBalances)
+        .map(([p, b]) => [p, Number(b)])
+        .filter(([p, b]) => p !== payer_id && b > 0);
+
+      // Read fresh DOM values
+      allRecipients.forEach(([pid]) => {
+        const inp = document.getElementById(`settlement-edit-${pid}`);
+        if (inp) state.settlementEditDraft[pid] = parseInt(inp.value, 10) || 0;
+      });
+
+      const newReceived = {};
+      let total = 0;
+      allRecipients.forEach(([pid]) => {
+        const v = state.settlementEditDraft[pid] || 0;
+        if (v > 0) { newReceived[pid] = v; total += v; }
+      });
+
+      // Recompute balancesAfter
+      const balances = {};
+      Object.entries(state.ledgerBalances).forEach(([p, b]) => { balances[p] = Number(b); });
+      const balancesAfter = { ...balances };
+      balancesAfter[payer_id] = (balances[payer_id] || 0) + amount;
+      Object.entries(newReceived).forEach(([pid, rcv]) => {
+        balancesAfter[pid] = (balances[pid] || 0) - rcv;
+      });
+
+      settlementDraft.received    = newReceived;
+      settlementDraft.balancesAfter = balancesAfter;
+      settlementDraft.leftover    = amount - total;
+      state.settlementEditOpen   = false;
+      state.settlementEditDraft  = {};
+      renderSettlementDistributionTable();
+    }
+
+    function resetSettlementRecipients() {
+      const balances = {};
+      Object.entries(state.ledgerBalances).forEach(([p, b]) => { balances[p] = Number(b); });
+      const result = distributeSettlement(balances, settlementDraft.payer_id, settlementDraft.amount);
+      settlementDraft.received     = result.received;
+      settlementDraft.balancesAfter = result.balancesAfter;
+      settlementDraft.leftover     = result.leftover;
+      state.settlementEditOpen  = false;
+      state.settlementEditDraft = {};
+      renderSettlementDistributionTable();
     }
 
     function showSettlementError(msg) {
@@ -1597,6 +1727,7 @@
 
     // Expose functions used from onclick attributes in dynamic HTML
     window.setLeaderboardWindow = setLeaderboardWindow;
+    window.setHistoryView        = setHistoryView;
     window.openSession       = openSession;
     window.startEventEdit    = startEventEdit;
     window.saveEventEdit     = saveEventEdit;
@@ -1606,6 +1737,10 @@
     window.onExpenseEditInput = onExpenseEditInput;
     window.applyExpenseOverride = applyExpenseOverride;
     window.resetExpenseOverride = resetExpenseOverride;
+    window.toggleSettlementEdit     = toggleSettlementEdit;
+    window.onSettlementEditInput    = onSettlementEditInput;
+    window.applySettlementRecipients  = applySettlementRecipients;
+    window.resetSettlementRecipients  = resetSettlementRecipients;
 
     // === VIEWER UI (chunk 5) ===
 
@@ -1644,12 +1779,6 @@
       return lines.join('\n');
     }
 
-    function copyLedgerToWhatsApp() {
-      navigator.clipboard.writeText(buildLedgerText())
-        .then(() => showToast('Copied to clipboard!', 'success'))
-        .catch(() => showToast('Copy failed — use Open in WhatsApp instead.', 'error'));
-    }
-
     function openLedgerWhatsApp() {
       window.open('https://wa.me/?text=' + encodeURIComponent(buildLedgerText()), '_blank');
     }
@@ -1686,14 +1815,10 @@
       html += `<div class="mt-4 pt-3 border-t border-gray-800 flex justify-between text-sm text-gray-500">
         <span>Total</span><span class="${totalCol} font-medium">${formatINR(total)}</span>
       </div>`;
-      html += `<div class="mt-4 flex gap-2">
-        <button onclick="copyLedgerToWhatsApp()"
-          class="flex-1 bg-gray-800 hover:bg-gray-700 active:bg-gray-900 rounded-xl py-3 text-sm font-medium transition-colors">
-          📋 Copy for WhatsApp
-        </button>
+      html += `<div class="mt-4">
         <button onclick="openLedgerWhatsApp()"
-          class="flex-1 bg-green-800 hover:bg-green-700 active:bg-green-900 rounded-xl py-3 text-sm font-medium transition-colors">
-          💬 Open in WhatsApp
+          class="w-full bg-green-800 hover:bg-green-700 active:bg-green-900 rounded-xl py-3 text-sm font-medium transition-colors">
+          💬 Share to WhatsApp
         </button>
       </div>`;
 
@@ -1769,114 +1894,153 @@
 
     // ── SCREEN 3: History ─────────────────────────────────────────────────────
 
+    function setHistoryView(v) {
+      state.historyView = v;
+      renderHistory();
+    }
+
     function renderHistory() {
       const el = document.getElementById('screen-history');
       if (!el) return;
 
-      const finalized = [...state.sessions]
-        .filter(s => s.status === 'finalized')
-        .sort((a, b) => new Date(b.finalized_at) - new Date(a.finalized_at));
+      const v = state.historyView || 'sessions';
 
-      let html = '<h1 class="text-2xl font-bold mb-4">History</h1>';
+      // Toggle
+      const toggleHtml = `<div class="flex bg-gray-800 rounded-2xl p-1 mb-4">
+        <button onclick="setHistoryView('sessions')"
+          class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${v === 'sessions' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'}">
+          Sessions
+        </button>
+        <button onclick="setHistoryView('settlements')"
+          class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${v === 'settlements' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'}">
+          Settlements
+        </button>
+      </div>`;
 
-      if (!finalized.length) {
-        html += '<p class="text-gray-400">No finished sessions yet.</p>';
-        el.innerHTML = html;
-        return;
-      }
+      let html = '<h1 class="text-2xl font-bold mb-4">History</h1>' + toggleHtml;
 
-      html += '<div class="space-y-4">';
-      finalized.forEach(session => {
-        const results = state.allSessionResults
-          .filter(r => r.session_id === session.id)
-          .sort((a, b) => b.net - a.net);
-        const date = new Date(session.finalized_at).toLocaleDateString('en-IN', {
-          day: 'numeric', month: 'short', year: 'numeric',
-        });
-        html += `<div class="bg-gray-800 rounded-2xl p-4">
-          <div class="mb-3">
-            <p class="text-base font-semibold">${session.name}</p>
-            <p class="text-xs text-gray-500">${date}</p>
-          </div>`;
-        if (!results.length) {
-          html += '<p class="text-gray-500 text-sm">No results recorded.</p>';
-        } else {
-          html += '<div class="space-y-1">';
-          results.forEach(r => {
-            const col = r.net > 0 ? 'text-green-400' : r.net < 0 ? 'text-red-400' : 'text-gray-400';
-            html += `<div class="flex justify-between text-sm">
-              <span>${playerName(r.player_id)}</span>
-              <span class="${col} font-medium">${formatINR(r.net)}</span>
-            </div>`;
-          });
-          html += '</div>';
+      if (v === 'sessions') {
+        const finalized = [...state.sessions]
+          .filter(s => s.status === 'finalized')
+          .sort((a, b) => new Date(b.finalized_at) - new Date(a.finalized_at));
+
+        if (!finalized.length) {
+          html += '<p class="text-gray-400">No finished sessions yet.</p>';
+          el.innerHTML = html;
+          return;
         }
-        const sessionExpenses = (state.expenseEvents || []).filter(e => e.session_id === session.id);
-        if (sessionExpenses.length) {
-          html += '<div class="mt-3 pt-3 border-t border-gray-700">';
 
-          // Fronter list
-          html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Paid up front (reimbursed)</p>';
-          html += '<div class="space-y-1 mb-3">';
-          sessionExpenses.forEach(e => {
-            const note = e.note ? `<span class="text-gray-500 ml-1">· ${e.note}</span>` : '';
-            html += `<div class="flex justify-between text-xs text-gray-400">
-              <span>${playerName(e.player_id)}${note}</span>
-              <span>${formatINR(e.amount)}</span>
-            </div>`;
+        html += '<div class="space-y-4">';
+        finalized.forEach(session => {
+          const results = state.allSessionResults
+            .filter(r => r.session_id === session.id)
+            .sort((a, b) => b.net - a.net);
+          const date = new Date(session.finalized_at).toLocaleDateString('en-IN', {
+            day: 'numeric', month: 'short', year: 'numeric',
           });
-          html += '</div>';
-
-          // Borne-by list: gross + reimbursement − storedNet (override-proof — uses stored nets)
-          const sessionEvts = state.finalizedSessionEvents[session.id] || [];
-          if (sessionEvts.length) {
-            const sessionPlayerIds = new Set();
-            sessionEvts.forEach(e => { sessionPlayerIds.add(e.player_id); if (e.counterparty_id) sessionPlayerIds.add(e.counterparty_id); });
-            const sessionPlayers = state.players.filter(p => sessionPlayerIds.has(p.id));
-            const { perPlayer } = computeSessionResults(sessionPlayers, sessionEvts);
-            const storedNets = {};
-            state.allSessionResults.filter(r => r.session_id === session.id).forEach(r => { storedNets[r.player_id] = r.net; });
-
-            const borneList = sessionPlayers
-              .map(p => {
-                const pp = perPlayer[p.id] || { gross: 0, reimbursement: 0 };
-                const borne = pp.gross + pp.reimbursement - (storedNets[p.id] || 0);
-                return { p, borne, gross: pp.gross };
-              })
-              .filter(x => x.borne > 0)
-              .sort((a, b) => b.borne - a.borne);
-
-            if (borneList.length) {
-              html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Borne by winners (at settlement)</p>';
-              html += '<div class="space-y-1">';
-              borneList.forEach(({ p, borne, gross }) => {
-                const pctStr = gross > 0 ? ` · ${Math.round(borne / gross * 100)}% of profit` : '';
-                html += `<div class="flex justify-between text-xs text-gray-400">
-                  <span>${p.name}${pctStr}</span>
-                  <span>${formatINR(borne)}</span>
-                </div>`;
-              });
-              html += '</div>';
-            }
+          html += `<div class="bg-gray-800 rounded-2xl p-4">
+            <div class="mb-3">
+              <p class="text-base font-semibold">${session.name}</p>
+              <p class="text-xs text-gray-500">${date}</p>
+            </div>`;
+          if (!results.length) {
+            html += '<p class="text-gray-500 text-sm">No results recorded.</p>';
+          } else {
+            html += '<div class="space-y-1">';
+            results.forEach(r => {
+              const col = r.net > 0 ? 'text-green-400' : r.net < 0 ? 'text-red-400' : 'text-gray-400';
+              html += `<div class="flex justify-between text-sm">
+                <span>${playerName(r.player_id)}</span>
+                <span class="${col} font-medium">${formatINR(r.net)}</span>
+              </div>`;
+            });
+            html += '</div>';
           }
+          const sessionExpenses = (state.expenseEvents || []).filter(e => e.session_id === session.id);
+          if (sessionExpenses.length) {
+            html += '<div class="mt-3 pt-3 border-t border-gray-700">';
 
+            html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Paid up front (reimbursed)</p>';
+            html += '<div class="space-y-1 mb-3">';
+            sessionExpenses.forEach(e => {
+              const note = e.note ? `<span class="text-gray-500 ml-1">· ${e.note}</span>` : '';
+              html += `<div class="flex justify-between text-xs text-gray-400">
+                <span>${playerName(e.player_id)}${note}</span>
+                <span>${formatINR(e.amount)}</span>
+              </div>`;
+            });
+            html += '</div>';
+
+            const sessionEvts = state.finalizedSessionEvents[session.id] || [];
+            if (sessionEvts.length) {
+              const sessionPlayerIds = new Set();
+              sessionEvts.forEach(e => { sessionPlayerIds.add(e.player_id); if (e.counterparty_id) sessionPlayerIds.add(e.counterparty_id); });
+              const sessionPlayers = state.players.filter(p => sessionPlayerIds.has(p.id));
+              const { perPlayer } = computeSessionResults(sessionPlayers, sessionEvts);
+              const storedNets = {};
+              state.allSessionResults.filter(r => r.session_id === session.id).forEach(r => { storedNets[r.player_id] = r.net; });
+
+              const borneList = sessionPlayers
+                .map(p => {
+                  const pp = perPlayer[p.id] || { gross: 0, reimbursement: 0 };
+                  const borne = pp.gross + pp.reimbursement - (storedNets[p.id] || 0);
+                  return { p, borne, gross: pp.gross };
+                })
+                .filter(x => x.borne > 0)
+                .sort((a, b) => b.borne - a.borne);
+
+              if (borneList.length) {
+                html += '<p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Borne by winners (at settlement)</p>';
+                html += '<div class="space-y-1">';
+                borneList.forEach(({ p, borne, gross }) => {
+                  const pctStr = gross > 0 ? ` · ${Math.round(borne / gross * 100)}% of profit` : '';
+                  html += `<div class="flex justify-between text-xs text-gray-400">
+                    <span>${p.name}${pctStr}</span>
+                    <span>${formatINR(borne)}</span>
+                  </div>`;
+                });
+                html += '</div>';
+              }
+            }
+
+            html += '</div>';
+          }
           html += '</div>';
-        }
+        });
         html += '</div>';
-      });
-      html += '</div>';
 
-      if (state.settlements.length) {
-        html += '<h2 class="text-lg font-semibold mt-6 mb-3">Settlements</h2><div class="space-y-2">';
-        state.settlements.forEach(s => {
+      } else {
+        // Settlements view — newest first
+        const settlements = [...state.settlements].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        if (!settlements.length) {
+          html += '<p class="text-gray-400">No settlements yet.</p>';
+          el.innerHTML = html;
+          return;
+        }
+        html += '<div class="space-y-3">';
+        settlements.forEach(s => {
           const date = new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-          html += `<div class="bg-gray-800 rounded-xl p-3 flex justify-between items-center">
-            <div>
-              <span class="text-sm font-medium">${playerName(s.payer_id)}</span>
-              <span class="text-xs text-gray-500 ml-2">${date}</span>
-            </div>
-            <span class="text-sm font-semibold text-green-400">${formatINR(s.amount)}</span>
-          </div>`;
+          const dist = s.distribution || {};
+          const entries = Object.entries(dist);
+          html += `<div class="bg-gray-800 rounded-2xl p-4">
+            <div class="flex justify-between items-center mb-2">
+              <div>
+                <span class="text-sm font-semibold">${playerName(s.payer_id)}</span>
+                <span class="text-xs text-gray-500 ml-2">${date}</span>
+              </div>
+              <span class="text-sm font-semibold text-green-400">${formatINR(s.amount)}</span>
+            </div>`;
+          if (entries.length) {
+            html += '<div class="space-y-1 border-t border-gray-700 pt-2">';
+            entries.forEach(([pid, amt]) => {
+              html += `<div class="flex justify-between text-xs text-gray-400">
+                <span>${playerName(pid)}</span>
+                <span class="text-green-400">received ${formatINR(amt)}</span>
+              </div>`;
+            });
+            html += '</div>';
+          }
+          html += '</div>';
         });
         html += '</div>';
       }
@@ -1996,7 +2160,7 @@
             <div class="${avatarBg} rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold shrink-0">${name.charAt(0).toUpperCase()}</div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-semibold">${name}</p>
-              <p class="text-xs text-gray-400 leading-relaxed">${p.games} games · ${winRate}% win · avg ${formatINR(avg)}</p>
+              <p class="text-xs text-gray-400 leading-relaxed">avg ${formatINR(avg)}</p>
             </div>
             <span class="${netCol} text-sm font-semibold shrink-0">${formatINR(p.net)}</span>
           </div>`;
@@ -2273,7 +2437,6 @@
 
       // Update Ledger
       document.getElementById('btn-show-update-ledger').addEventListener('click', showUpdateLedgerPreview);
-      document.getElementById('btn-recalculate-ledger').addEventListener('click', recalculateLedgerPreview);
       document.getElementById('btn-ledger-confirm-yes').addEventListener('click', confirmUpdateLedger);
       document.getElementById('btn-ledger-cancel').addEventListener('click', () => {
         document.getElementById('update-ledger-preview').classList.add('hidden');
@@ -2285,6 +2448,8 @@
       document.getElementById('btn-settlement-confirm').addEventListener('click', confirmSettlement);
       document.getElementById('btn-settlement-cancel').addEventListener('click', () => {
         settlementDraft = null;
+        state.settlementEditOpen = false;
+        state.settlementEditDraft = {};
         document.getElementById('settlement-preview-area').classList.add('hidden');
       });
 
