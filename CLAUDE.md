@@ -1,3 +1,5 @@
+> **See [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md) for the full authoritative project guide.**
+
 # Poker Ledger — Claude Code Context
 
 ## Product summary
