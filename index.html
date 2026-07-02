@@ -738,9 +738,9 @@
       );
     }
 
-    async function createSessionResult(session_id, player_id, net) {
+    async function createSessionResult(session_id, player_id, net, bought_in) {
       return dbQuery("createSessionResult", db =>
-        db.from("session_results").insert({ session_id, player_id, net }).select().single()
+        db.from("session_results").insert({ session_id, player_id, net, bought_in }).select().single()
       );
     }
 
@@ -1467,11 +1467,18 @@
 
       const { perPlayer } = computeSessionResults(roster, state.openSessionEvents, override);
 
+      const activeEvents = state.openSessionEvents.filter(e => !e.deleted_at);
+      const boughtInSet = new Set(
+        activeEvents
+          .filter(e => e.type === 'buyin' || e.type === 'rebuy')
+          .map(e => e.player_id)
+      );
+
       try {
         // Write session_results first — these act as the "already posted" marker.
         await Promise.all(roster.map(p => {
           const net = (perPlayer[p.id] || { net: 0 }).net;
-          return createSessionResult(state.openSessionId, p.id, net);
+          return createSessionResult(state.openSessionId, p.id, net, boughtInSet.has(p.id));
         }));
         // Then update ledger balances.
         await Promise.all(roster.map(p => {
@@ -2102,10 +2109,11 @@
       const stats = {};
       allSessionResults.forEach(r => {
         if (!qualIds.has(r.session_id)) return;
+        if (!r.bought_in) return;
         if (!stats[r.player_id]) stats[r.player_id] = { net: 0, games: 0, wins: 0 };
         stats[r.player_id].net   += r.net;
         stats[r.player_id].games += 1;
-        if (r.net > 0) stats[r.player_id].wins += 1;
+        if (r.net >= 0) stats[r.player_id].wins += 1;
       });
       return stats;
     }
