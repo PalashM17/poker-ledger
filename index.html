@@ -738,9 +738,9 @@
       );
     }
 
-    async function createSessionResult(session_id, player_id, net, bought_in) {
+    async function createSessionResult(session_id, player_id, net, bought_in, gross_net) {
       return dbQuery("createSessionResult", db =>
-        db.from("session_results").insert({ session_id, player_id, net, bought_in }).select().single()
+        db.from("session_results").insert({ session_id, player_id, net, bought_in, gross_net }).select().single()
       );
     }
 
@@ -1477,8 +1477,8 @@
       try {
         // Write session_results first — these act as the "already posted" marker.
         await Promise.all(roster.map(p => {
-          const net = (perPlayer[p.id] || { net: 0 }).net;
-          return createSessionResult(state.openSessionId, p.id, net, boughtInSet.has(p.id));
+          const result = perPlayer[p.id] || { net: 0, gross: 0 };
+          return createSessionResult(state.openSessionId, p.id, result.net, boughtInSet.has(p.id), result.gross);
         }));
         // Then update ledger balances.
         await Promise.all(roster.map(p => {
@@ -2090,11 +2090,12 @@
 
     // Returns { maxWin: row|null, maxLoss: row|null } across all session_results rows.
     function biggestSingle(allSessionResults) {
-      if (!allSessionResults.length) return { maxWin: null, maxLoss: null };
+      const eligible = allSessionResults.filter(r => r.bought_in);
+      if (!eligible.length) return { maxWin: null, maxLoss: null };
       let maxWin = null, maxLoss = null;
-      allSessionResults.forEach(r => {
-        if (!maxWin  || r.net > maxWin.net)  maxWin  = r;
-        if (!maxLoss || r.net < maxLoss.net) maxLoss = r;
+      eligible.forEach(r => {
+        if (!maxWin  || r.gross_net > maxWin.gross_net)  maxWin  = r;
+        if (!maxLoss || r.gross_net < maxLoss.gross_net) maxLoss = r;
       });
       return { maxWin, maxLoss };
     }
@@ -2111,9 +2112,9 @@
         if (!qualIds.has(r.session_id)) return;
         if (!r.bought_in) return;
         if (!stats[r.player_id]) stats[r.player_id] = { net: 0, games: 0, wins: 0 };
-        stats[r.player_id].net   += r.net;
+        stats[r.player_id].net   += r.gross_net;
         stats[r.player_id].games += 1;
-        if (r.net >= 0) stats[r.player_id].wins += 1;
+        if (r.gross_net >= 0) stats[r.player_id].wins += 1;
       });
       return stats;
     }
@@ -2209,7 +2210,7 @@
             <p class="text-sm font-semibold">${playerName(maxWin.player_id)}</p>
             <p class="text-xs text-gray-500">${sessionMeta(maxWin.session_id)}</p>
           </div>
-          <span class="text-green-400 text-base font-bold shrink-0">${formatINR(maxWin.net)}</span>
+          <span class="text-green-400 text-base font-bold shrink-0">${formatINR(maxWin.gross_net)}</span>
         </div>`;
         if (maxLoss) singleHtml += `<div class="flex justify-between items-center gap-3">
           <div class="min-w-0">
@@ -2217,7 +2218,7 @@
             <p class="text-sm font-semibold">${playerName(maxLoss.player_id)}</p>
             <p class="text-xs text-gray-500">${sessionMeta(maxLoss.session_id)}</p>
           </div>
-          <span class="text-red-400 text-base font-bold shrink-0">${formatINR(maxLoss.net)}</span>
+          <span class="text-red-400 text-base font-bold shrink-0">${formatINR(maxLoss.gross_net)}</span>
         </div>`;
         singleHtml += '</div>';
       }
