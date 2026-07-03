@@ -2089,8 +2089,13 @@
     }
 
     // Returns { maxWin: row|null, maxLoss: row|null } across all session_results rows.
-    function biggestSingle(allSessionResults) {
-      const eligible = allSessionResults.filter(r => r.bought_in);
+    function biggestSingle(sessions, allSessionResults, sinceMs) {
+      const qualIds = new Set(
+        sessions
+          .filter(s => s.status === 'finalized' && (sinceMs === 0 || new Date(s.finalized_at).getTime() >= sinceMs))
+          .map(s => s.id)
+      );
+      const eligible = allSessionResults.filter(r => r.bought_in && qualIds.has(r.session_id));
       if (!eligible.length) return { maxWin: null, maxLoss: null };
       let maxWin = null, maxLoss = null;
       eligible.forEach(r => {
@@ -2133,7 +2138,7 @@
       const sinceMs = w === '7d' ? now - 7 * 24 * 60 * 60 * 1000 : w === '30d' ? now - 30 * 86400000 : 0;
 
       const statsMap = aggregatePlayerStats(state.sessions, state.allSessionResults, sinceMs);
-      const { maxWin, maxLoss } = biggestSingle(state.allSessionResults);
+      const { maxWin, maxLoss } = biggestSingle(state.sessions, state.allSessionResults, sinceMs);
 
       // Toggle
       const tabs = [['7d', 'Week'], ['30d', 'Month'], ['all', 'All time']];
@@ -2192,7 +2197,7 @@
         });
       }
 
-      // Biggest single session (all-time, unaffected by toggle)
+      // Biggest single session (all-time, affected by toggle)
       function sessionMeta(sessionId) {
         const s = state.sessions.find(s => s.id === sessionId);
         if (!s) return '';
@@ -2234,7 +2239,7 @@
             ${attendanceHtml}
           </div>`
         + `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
-            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">Biggest single session · all time</p>
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">Biggest single session · ${tabs.find(([val]) => val === w)[1]}</p>
             ${singleHtml}
           </div>`;
     }
