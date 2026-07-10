@@ -1802,9 +1802,11 @@
         return;
       }
 
-      const sorted = [...players].sort((a, b) =>
-        (state.ledgerBalances[a.id] || 0) - (state.ledgerBalances[b.id] || 0)
-      );
+      const sorted = [...players]
+        .filter(p => (state.ledgerBalances[p.id] || 0) !== 0)
+        .sort((a, b) =>
+          (state.ledgerBalances[a.id] || 0) - (state.ledgerBalances[b.id] || 0)
+        );
       const total = sorted.reduce((s, p) => s + (state.ledgerBalances[p.id] || 0), 0);
 
       let html = '<h1 class="text-2xl font-bold mb-4">Ledger</h1><div class="space-y-2">';
