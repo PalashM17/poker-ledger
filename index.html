@@ -299,6 +299,8 @@
       expenseOverride: {},         // { [sessionId]: { [playerId]: amount } } — manual split from live panel
       expenseEditOpen: false,      // whether the inline expense editor is open
       expenseEditDraft: {},        // { [playerId]: amount } — live values while editing
+      expenseEqualOpen: false,     // whether the equal-split picker is open
+      expenseEqualSelected: {},    // { [playerId]: bool } — who's included in the equal split
       // Chunk 5 viewer state
       allSessionResults: [],       // every session_results row (all sessions)
       settlements: [],             // every settlements row
@@ -1198,9 +1200,14 @@
         html += `<p class="text-xs text-yellow-400 mb-2">⚠ Manual override active</p>`;
       }
 
-      // Edit split toggle
-      if (!state.expenseEditOpen) {
+      // Edit split / equal split toggles
+      if (!state.expenseEditOpen && !state.expenseEqualOpen) {
+        html += `<div class="flex gap-4">`;
         html += `<button onclick="toggleExpenseEdit()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Edit split</button>`;
+        html += `<button onclick="toggleEqualSplit()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Split equally</button>`;
+        html += `</div>`;
+      } else if (state.expenseEqualOpen) {
+        html += renderEqualSplitPicker(roster, totalExpense);
       } else {
         // Inline editor — values from expenseEditDraft (poll-safe)
         html += `<div class="border-t border-gray-700 pt-3 mt-1">`;
@@ -1246,6 +1253,39 @@
 
       html += `</div>`;
       div.innerHTML = html;
+    }
+    
+    function renderEqualSplitPicker(roster, totalExpense) {
+      const selected = roster.filter(p => state.expenseEqualSelected[p.id]);
+      const shares = selected.length
+        ? splitProportional(totalExpense, selected.map(p => ({ id: p.id, weight: 1 })))
+        : {};
+
+      let html = `<div class="border-t border-gray-700 pt-3 mt-1">`;
+      html += `<p class="text-xs text-gray-400 mb-2">Split equally among:</p>`;
+      html += `<div class="space-y-2 mb-2">`;
+      roster.forEach(p => {
+        const checked = !!state.expenseEqualSelected[p.id];
+        const shareStr = checked ? formatINR(shares[p.id] || 0) : '';
+        html += `<label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleEqualPlayer('${p.id}')"
+            class="w-4 h-4 rounded bg-gray-700 border-gray-600 accent-indigo-500" />
+          <span class="flex-1">${p.name}</span>
+          <span class="text-xs text-gray-400">${shareStr}</span>
+        </label>`;
+      });
+      html += `</div>`;
+
+      if (!selected.length) {
+        html += `<p class="text-xs text-yellow-400 mb-2">Select at least one player.</p>`;
+      }
+
+      html += `<div class="flex gap-2 mt-2">`;
+      html += `<button onclick="applyEqualSplit()" ${selected.length ? '' : 'disabled'}
+        class="flex-1 rounded-lg py-2 text-xs font-medium ${selected.length ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-700 opacity-50 cursor-not-allowed'}">Apply equal split</button>`;
+      html += `<button onclick="toggleEqualSplit()" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-xs font-medium">Cancel</button>`;
+      html += `</div></div>`;
+      return html;
     }
 
     function toggleExpenseEdit() {
@@ -1321,6 +1361,42 @@
       delete state.expenseOverride[state.openSessionId];
       state.expenseEditOpen = false;
       state.expenseEditDraft = {};
+      renderExpensePanel();
+    }
+
+    function toggleEqualSplit() {
+      if (!state.expenseEqualOpen) {
+        const roster = rosterPlayers();
+        state.expenseEqualSelected = {};
+        roster.forEach(p => { state.expenseEqualSelected[p.id] = true; });
+        state.expenseEqualOpen = true;
+      } else {
+        state.expenseEqualOpen = false;
+        state.expenseEqualSelected = {};
+      }
+      renderExpensePanel();
+    }
+
+    function toggleEqualPlayer(playerId) {
+      state.expenseEqualSelected[playerId] = !state.expenseEqualSelected[playerId];
+      renderExpensePanel();
+    }
+
+    function applyEqualSplit() {
+      const roster = rosterPlayers();
+      const selected = roster.filter(p => state.expenseEqualSelected[p.id]);
+      if (!selected.length) return; // button disabled, but guard anyway
+
+      const events = state.openSessionEvents;
+      const { totalExpense } = computeSessionResults(roster, events);
+      const shares = splitProportional(totalExpense, selected.map(p => ({ id: p.id, weight: 1 })));
+
+      const shareMap = {};
+      roster.forEach(p => { shareMap[p.id] = shares[p.id] || 0; });
+
+      state.expenseOverride[state.openSessionId] = shareMap;
+      state.expenseEqualOpen = false;
+      state.expenseEqualSelected = {};
       renderExpensePanel();
     }
 
