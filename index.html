@@ -1145,6 +1145,15 @@
       } catch (e) { console.warn('[ADMIN] refreshSessionEvents failed:', e.message); }
     }
 
+    // Persists roster membership as a zero-effect event so it survives refresh.
+    async function addPlayerToSession(playerId) {
+      if (!state.openSessionId) return;
+      try {
+        await createSessionEvent({ session_id: state.openSessionId, type: 'join', player_id: playerId, amount: 0 });
+        await refreshSessionEvents();
+      } catch (e) { console.warn('[ADMIN] addPlayerToSession failed:', e.message); }
+    }
+
     // ── Live expense panel (active / closed sessions with expenses) ───────────
 
     function renderExpensePanel() {
@@ -2492,8 +2501,7 @@
       document.getElementById('btn-roster-add').addEventListener('click', () => {
         const pid = document.getElementById('roster-player-pick').value;
         if (!pid) return;
-        state.openSessionRoster.add(pid);
-        updatePlayerSelects();
+        addPlayerToSession(pid);
       });
 
       // Quick-create player
@@ -2504,9 +2512,8 @@
           const player = await createPlayer(name);
           // Optimistically push into state so playerName() works immediately
           state.players.push(player);
-          state.openSessionRoster.add(player.id);
           document.getElementById('quick-add-player-name').value = '';
-          updatePlayerSelects();
+          await addPlayerToSession(player.id);
         } catch (e) { console.warn('[ADMIN] createPlayer failed:', e.message); }
       });
       document.getElementById('quick-add-player-name').addEventListener('keydown', e => {
