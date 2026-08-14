@@ -6,6 +6,7 @@
   <title>Poker Ledger</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 
@@ -277,6 +278,8 @@
     let db = null;
     try { db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (e) { console.warn("Supabase init failed", e); }
 
+    let trendChartInstance = null; // Chart.js instance for the leaderboard trend chart — destroy before each re-render
+
     // === STATE ===
     const state = {
       currentScreen: "ledger",
@@ -308,6 +311,7 @@
       expenseEvents: [],           // all non-deleted expense rows across all sessions
       finalizedSessionEvents: {},  // { [sessionId]: [events] } for finalized sessions with expenses
       leaderboardWindow: '30d',    // '7d' | '30d' | 'all' — persists across poll ticks
+      trendPlayerId: null,         // selected player for the cumulative trend chart
       historyView: 'sessions',     // 'sessions' | 'settlements' — persists across poll ticks
       settlementEditOpen: false,   // whether the settlement recipient editor is open
       settlementEditDraft: {},     // { [playerId]: amount } — live values while editing recipients
@@ -2211,6 +2215,84 @@
       return stats;
     }
 
+    // Pure: chronological cumulative gross_net trend for one player, within the sinceMs window.
+    // Returns { labels: string[], values: number[] } — values[i] is the running total through session i.
+    function playerCumulativeTrend(playerId, sessions, allSessionResults, sinceMs) {
+      const qualSessions = sessions
+        .filter(s => s.status === 'finalized' && (sinceMs === 0 || new Date(s.finalized_at).getTime() >= sinceMs))
+        .sort((a, b) => new Date(a.finalized_at).getTime() - new Date(b.finalized_at).getTime());
+      const qualIds = new Set(qualSessions.map(s => s.id));
+
+      const resultBySession = {};
+      allSessionResults.forEach(r => {
+        if (r.player_id === playerId && r.bought_in && qualIds.has(r.session_id)) {
+          resultBySession[r.session_id] = r;
+        }
+      });
+
+      const labels = [];
+      const values = [];
+      let running = 0;
+      qualSessions.forEach(s => {
+        const r = resultBySession[s.id];
+        if (!r) return; // player didn't buy in to this session
+        running += r.gross_net;
+        const date = s.finalized_at ? new Date(s.finalized_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : s.name;
+        labels.push(date);
+        values.push(running);
+      });
+      return { labels, values };
+    }
+
+    function setTrendPlayer(playerId) {
+      state.trendPlayerId = playerId;
+      renderLeaderboards();
+    }
+
+    function renderTrendChart(playerId, sessions, allSessionResults, sinceMs) {
+      const canvas = document.getElementById('trend-chart-canvas');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      if (trendChartInstance) {
+        trendChartInstance.destroy();
+        trendChartInstance = null;
+      }
+      if (!playerId) return;
+
+      const { labels, values } = playerCumulativeTrend(playerId, sessions, allSessionResults, sinceMs);
+      if (!labels.length) return;
+
+      const barColors = values.map(v => v >= 0 ? 'rgba(74, 222, 128, 0.8)' : 'rgba(248, 113, 113, 0.8)');
+
+      trendChartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: barColors,
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => formatINR(ctx.parsed.y),
+              },
+            },
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } },
+          },
+        },
+      });
+    }
+
     function setLeaderboardWindow(w) {
       state.leaderboardWindow = w;
       renderLeaderboards();
@@ -2315,6 +2397,28 @@
         singleHtml += '</div>';
       }
 
+      // Player trend chart — dropdown + canvas
+      const trendPlayerId = state.trendPlayerId || (standingPlayers[0] && standingPlayers[0].id) || null;
+      if (trendPlayerId && !state.trendPlayerId) state.trendPlayerId = trendPlayerId;
+
+      let trendOptionsHtml = '';
+      state.players.forEach(p => {
+        trendOptionsHtml += `<option value="${p.id}" ${p.id === trendPlayerId ? 'selected' : ''}>${p.name}</option>`;
+      });
+
+      const trendHtml = `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Trend</p>
+            <select onchange="setTrendPlayer(this.value)"
+              class="bg-gray-700 text-gray-200 text-sm rounded-lg px-2 py-1 border-0 outline-none">
+              ${trendOptionsHtml}
+            </select>
+          </div>
+          <div style="position: relative; height: 220px;">
+            <canvas id="trend-chart-canvas"></canvas>
+          </div>
+        </div>`;
+
       el.innerHTML = '<h1 class="text-2xl font-bold mb-4">Leaderboards</h1>'
         + toggleHtml
         + `<div class="bg-gray-800 rounded-2xl px-4 pt-4 pb-1 mb-3">
@@ -2325,11 +2429,17 @@
             <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Most games played</p>
             ${attendanceHtml}
           </div>`
+        + trendHtml
         + `<div class="bg-gray-800 rounded-2xl p-4 mb-3">
             <p class="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-3">Biggest single session · ${tabs.find(([val]) => val === w)[1]}</p>
             ${singleHtml}
           </div>`;
+
+      // Chart.js needs the canvas to exist in the DOM before drawing — render after innerHTML is set
+      renderTrendChart(trendPlayerId, state.sessions, state.allSessionResults, sinceMs);
     }
+
+
 
     // ── renderAll: only re-render the visible viewer screen each tick ─────────
 
