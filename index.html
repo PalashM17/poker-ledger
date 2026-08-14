@@ -2262,16 +2262,21 @@
       const { labels, values } = playerCumulativeTrend(playerId, sessions, allSessionResults, sinceMs);
       if (!labels.length) return;
 
-      const barColors = values.map(v => v >= 0 ? 'rgba(74, 222, 128, 0.8)' : 'rgba(248, 113, 113, 0.8)');
-
       trendChartInstance = new Chart(canvas.getContext('2d'), {
-        type: 'bar',
+        type: 'line',
         data: {
           labels,
           datasets: [{
             data: values,
-            backgroundColor: barColors,
-            borderRadius: 4,
+            borderColor: 'rgba(129, 140, 248, 1)',      // indigo-400 line
+            backgroundColor: 'rgba(129, 140, 248, 0.15)', // soft fill under the line
+            pointBackgroundColor: barColors,              // keep green/red per-point coloring
+            pointBorderColor: barColors,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            tension: 0.25,     // slight curve; set to 0 for straight segments
+            fill: true,
           }],
         },
         options: {
@@ -2443,12 +2448,27 @@
 
     // ── renderAll: only re-render the visible viewer screen each tick ─────────
 
+    let lastLeaderboardsSignature = null;
+
     function renderAll() {
       const screen = state.currentScreen;
       if      (screen === 'ledger')       renderLedger();
       else if (screen === 'live')         renderLive();
       else if (screen === 'history')      renderHistory();
-      else if (screen === 'leaderboards') renderLeaderboards();
+      else if (screen === 'leaderboards') {
+        // Skip full re-render (and chart destroy/recreate) if nothing changed since last tick —
+        // avoids the chart/dropdown visibly resetting every poll interval.
+        const sig = JSON.stringify({
+          w: state.leaderboardWindow,
+          trend: state.trendPlayerId,
+          results: state.allSessionResults.length,
+          sessions: state.sessions.map(s => s.id + ':' + s.status).join(','),
+        });
+        if (sig !== lastLeaderboardsSignature) {
+          lastLeaderboardsSignature = sig;
+          renderLeaderboards();
+        }
+      }
       renderAdminControls();
     }
 
