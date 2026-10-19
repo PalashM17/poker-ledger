@@ -1038,6 +1038,10 @@
 
         const note       = e.note ? ` <span class="text-gray-500">· ${e.note}</span>` : '';
         const counterparty = e.counterparty_id ? ` → ${playerName(e.counterparty_id)}` : '';
+        const timeStr    = e.created_at
+          ? new Date(e.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+          : '';
+        
         const actions = isActive
           ? `<div class="flex gap-2 mt-2">
               <button class="flex-1 bg-gray-700 hover:bg-gray-600 active:bg-gray-800 rounded-lg px-3 py-2.5 text-sm font-medium"
@@ -1052,6 +1056,7 @@
             <span class="text-sm font-semibold">${formatINR(e.amount)}</span>
           </div>
           <p class="text-sm mt-0.5">${playerName(e.player_id)}${counterparty}${note}</p>
+          <p class="text-xs text-gray-500 mt-0.5">${timeStr}</p>
           ${actions}
         </div>`;
       }).join('');
