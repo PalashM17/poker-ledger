@@ -1052,11 +1052,15 @@
 
         return `<div class="bg-gray-800 rounded-xl p-3">
           <div class="flex justify-between items-start">
-            <span class="text-xs font-semibold text-indigo-400 uppercase">${e.type}</span>
-            <span class="text-sm font-semibold">${formatINR(e.amount)}</span>
+            <div class="min-w-0">
+              <span class="text-xs font-semibold text-indigo-400 uppercase">${e.type}</span>
+              <p class="text-sm mt-0.5">${playerName(e.player_id)}${counterparty}${note}</p>
+            </div>
+            <div class="text-right shrink-0 ml-3">
+              <span class="text-sm font-semibold">${formatINR(e.amount)}</span>
+              <p class="text-xs text-gray-500 mt-0.5">${timeStr}</p>
+            </div>
           </div>
-          <p class="text-sm mt-0.5">${playerName(e.player_id)}${counterparty}${note}</p>
-          <p class="text-xs text-gray-500 mt-0.5">${timeStr}</p>
           ${actions}
         </div>`;
       }).join('');
